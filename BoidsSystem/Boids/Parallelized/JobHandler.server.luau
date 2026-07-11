@@ -1,6 +1,18 @@
 --!native
 --!strict
 
+--[[ JobHandler
+Description:
+	Parallel Actor worker for boid simulation jobs. Receives cell jobs from the
+	server scheduler, updates boid movement and flocking state, records boids
+	that moved between cells, and builds network snapshot packets.
+
+Runtime Message API:
+	NewJob(job: Job, bindableEvent: BindableEvent): returns job results through bindableEvent
+	NewBoidsStatsBatch(batch: ActorBoidsBatch): caches static boid parameters by boid id
+	NewGroupTarget(groupId: number, target: Target): stores the current target for a group
+]]
+
 local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SharedTableRegistry = game:GetService("SharedTableRegistry")
@@ -296,7 +308,6 @@ actor:BindToMessageParallel("NewJob", function(job:Job, bindableEvent:BindableEv
 
 	for _, jobCell:JobCell in jobCells do
 		isBucketting = jobCell.boidCount > MAX_SEEN
-		--isBucketting = true
 		
 		if isBucketting then
 			table.clear(buckets)
@@ -397,53 +408,60 @@ actor:BindToMessageParallel("NewJob", function(job:Job, bindableEvent:BindableEv
 							boidCount = 1
 						}
 						buckets[bucketKey] = bucket
-						
+
 						continue
 					end
-					
-					
-					
+
 					table.insert(bucket.liveIndices, nextLiveIndex)
+					bucket.boidCount += 1
+
+					local aggregateWeight: number = 1 / bucket.boidCount
+					bucket.centerOfMass += (position - bucket.centerOfMass) * aggregateWeight
+					bucket.velocity += (velocity - bucket.velocity) * aggregateWeight
 				end
 			end
-			
-			local liveCount: number = nextLiveIndex
-			local boidIndex: number
-			local page: Page
-			local neighborKey: number, neighborBucket: {number}
-			for liveIndex: number = 1, liveCount do
-				boidId, position, velocity, lastTick, pathNode, pathVersion, page, boidIndex, bx, by, bz = 
-					ids[liveIndex], positions[liveIndex], velocities[liveIndex], lastTicks[liveIndex], pathNodes[liveIndex], pathVersions[liveIndex], pagesByIndex[liveIndex], slotsByIndex[liveIndex], bucketXs[liveIndex], bucketYs[liveIndex], bucketZs[liveIndex]
-				
-				boidStats = globalBoidsStats[boidId]
-				if not boidStats then
-					continue
-				end
-				
-				maxSpeed, minSpeed, sight, avoidance, separation, repulsion, repulsionStrength, alignment, cohesion, targetBias =
-					boidStats.maxSpeed, boidStats.minSpeed, boidStats.sight, boidStats.avoidance, boidStats.separation, boidStats.repulsion, boidStats.repulsionStrength, boidStats.alignment, boidStats.cohesion, boidStats.targetBias
+		end
 
-				closeness = Vector3.zero
-				avgVelocity = Vector3.zero
-				centerOfMass = Vector3.zero
+		local liveCount: number = nextLiveIndex
+		local boidIndex: number
+		local page: Page
+		local currentBucketKey: number, neighborKey: number, neighborBucket: Bucket
+		local otherBoidCount: number
+		for liveIndex: number = 1, liveCount do
+			boidId, position, velocity, lastTick, pathNode, pathVersion, page, boidIndex, bx, by, bz =
+				ids[liveIndex], positions[liveIndex], velocities[liveIndex], lastTicks[liveIndex], pathNodes[liveIndex], pathVersions[liveIndex], pagesByIndex[liveIndex], slotsByIndex[liveIndex], bucketXs[liveIndex], bucketYs[liveIndex], bucketZs[liveIndex]
 
-				separationCount = 0
-				alignmentCount = 0
-				cohesionCount = 0
-				
-				if isBucketting then
-					for _, searchOffset: {number} in bucketSearch do
-						neighborKey = findBucket(
-							bx + searchOffset[1],
-							by + searchOffset[2],
-							bz + searchOffset[3]
-						)
-						neighborBucket = buckets[neighborKey]
-						if not neighborBucket then
-							continue
-						end
+			boidStats = globalBoidsStats[boidId]
+			if not boidStats then
+				continue
+			end
 
-						for _, otherLiveIndex: number in neighborBucket do
+			maxSpeed, minSpeed, sight, avoidance, separation, repulsion, repulsionStrength, alignment, cohesion, targetBias =
+				boidStats.maxSpeed, boidStats.minSpeed, boidStats.sight, boidStats.avoidance, boidStats.separation, boidStats.repulsion, boidStats.repulsionStrength, boidStats.alignment, boidStats.cohesion, boidStats.targetBias
+
+			closeness = Vector3.zero
+			avgVelocity = Vector3.zero
+			centerOfMass = Vector3.zero
+
+			separationCount = 0
+			alignmentCount = 0
+			cohesionCount = 0
+
+			if isBucketting then
+				currentBucketKey = findBucket(bx, by, bz)
+				for _, searchOffset: {number} in bucketSearch do
+					neighborKey = findBucket(
+						bx + searchOffset[1],
+						by + searchOffset[2],
+						bz + searchOffset[3]
+					)
+					neighborBucket = buckets[neighborKey]
+					if not neighborBucket then
+						continue
+					end
+
+					if neighborKey == currentBucketKey then
+						for _, otherLiveIndex: number in neighborBucket.liveIndices do
 							neighborIterations += 1
 
 							if liveIndex == otherLiveIndex then
@@ -478,166 +496,186 @@ actor:BindToMessageParallel("NewJob", function(job:Job, bindableEvent:BindableEv
 								break
 							end
 						end
-
-						-- consider removing this check later if it makes sense to
-						if separationCount + alignmentCount >= MAX_SEEN then
-							break
-						end
-					end
-				else
-					for otherLiveIndex: number = 1, liveCount do
+					else
 						neighborIterations += 1
 
-						if liveIndex == otherLiveIndex then
-							continue
-						end
-
-						otherBoidStats = globalBoidsStats[ids[otherLiveIndex]]
-						if not otherBoidStats then
-							continue
-						end
-
-						repulsionDistance = avoidance + otherBoidStats.repulsion
-						otherPosition, otherVelocity = positions[otherLiveIndex], velocities[otherLiveIndex]
+						otherPosition, otherVelocity, otherBoidCount = neighborBucket.centerOfMass, neighborBucket.velocity, neighborBucket.boidCount
 
 						vectorTo = (position - otherPosition)
 						distanceSq = vectorTo:Dot(vectorTo)
-						if distanceSq > math.max(sight, repulsionDistance)^2 then
+						if distanceSq > sight^2 then
 							continue
 						end
 
-						if distanceSq < repulsionDistance^2 and distanceSq > 0 then
-							closeness += vectorTo.Unit * math.max(repulsionDistance - math.sqrt(distanceSq), 0) * otherBoidStats.repulsionStrength
-							separationCount += 1
+						if distanceSq < avoidance^2 and distanceSq > 0 then
+							closeness += vectorTo.Unit * math.max(avoidance - math.sqrt(distanceSq), 0) * neighborBucket.boidCount
+							separationCount += neighborBucket.boidCount
 						else
-							avgVelocity += otherVelocity
-							centerOfMass += otherPosition
-							alignmentCount += 1
-							cohesionCount += 1
-						end
-						
-						if separationCount + alignmentCount >= MAX_SEEN then
-							break
+							avgVelocity += otherVelocity * neighborBucket.boidCount
+							centerOfMass += otherPosition * neighborBucket.boidCount
+							alignmentCount += neighborBucket.boidCount
+							cohesionCount += neighborBucket.boidCount
 						end
 					end
+
+					-- consider removing this check later if it makes sense to
+					if separationCount + alignmentCount >= MAX_SEEN then
+						break
+					end
 				end
-				
-				if alignmentCount > 0 then
-					avgVelocity /= alignmentCount
-				end
-				if cohesionCount > 0 then
-					centerOfMass /= cohesionCount
-				end
-				if separationCount > 0 then
-					closeness /= separationCount
-				end
+			else
+				for otherLiveIndex: number = 1, liveCount do
+					neighborIterations += 1
 
-				dt = tickDeltaSeconds(currentTick, lastTick)
-				steeringDt = math.min(dt, 0.1)
-
-				targetAcceleration = Vector3.zero
-				toTarget = targetLocal - position
-				if toTarget:Dot(toTarget) > 1 then
-					targetAcceleration = (toTarget.Unit * maxSpeed) * targetBias
-				end
-
-				acceleration =
-					closeness * separation +
-					(avgVelocity - velocity) * alignment +
-					targetAcceleration
-
-				if centerOfMass:Dot(centerOfMass) > 0 then
-					acceleration += (centerOfMass - position).Unit * cohesion
-				end
-
-				maxAcceleration = maxSpeed * maxAccelerationScale
-				if acceleration:Dot(acceleration) > maxAcceleration * maxAcceleration then
-					acceleration = acceleration.Unit * maxAcceleration
-				end
-
-				velocity += acceleration * steeringDt
-
-				--speed = velocity.Magnitude
-				--boidCFrame = CFrame.lookAt(position, position + velocity)
-				--for _, ray:Vector3 in Rays do
-				--	ray = boidCFrame:VectorToWorldSpace(ray.Unit)
-
-				--	raycastResult = workspace:Raycast(origin + position, ray * speed)
-				--	if raycastResult then
-				--		normal = raycastResult.Normal
-				--		velocity +=
-				--			(velocity - 2 * (velocity:Dot(normal)) * normal) * (speed - raycastResult.Distance)^1
-				--		--(boidPosition - raycastResult.Position)
-				--	end
-				--end
-
-				-- clamp speed
-				speed = math.clamp(velocity.Magnitude, minSpeed, maxSpeed)
-				velocity = velocity.Unit
-
-				position += velocity * speed * dt
-				x, y, z = position.X, position.Y, position.Z
-				if  x < 0 or x >= CELL_SIZE
-					or y < 0 or y >= CELL_SIZE
-					or z < 0 or z >= CELL_SIZE
-				then
-					worldPosition = origin + position
-
-					local gx:number, gy:number, gz:number = Quantization.convertCoordsToGrid(
-						worldPosition.X,
-						worldPosition.Y,
-						worldPosition.Z
-					)
-
-					newOrigin = Vector3.new(gx, gy, gz)
-					newCellId = Quantization.getNumericalKey(gx, gy, gz)
-
-					networkVelocity = velocity * speed
-
-					movedCell = movedBoids[newCellId]
-					if not movedCell then
-						movedCell = {}
-						movedBoids[newCellId] = movedCell
+					if liveIndex == otherLiveIndex then
+						continue
 					end
 
-					table.insert(movedCell, boidId)
-					table.insert(movedCell, worldPosition)
-					table.insert(movedCell, networkVelocity)
-
-					if shouldEmitSnapshot then
-						movedCellSnapshot = NetworkResults.getOrCreateCellSnapshot(
-							simulationSnapshot,
-							snapshotByCellId,
-							newCellId,
-							newOrigin,
-							1
-						)
-
-						NetworkResults.appendBoid(
-							movedCellSnapshot,
-							boidId,
-							worldPosition - newOrigin,
-							networkVelocity
-						)
+					otherBoidStats = globalBoidsStats[ids[otherLiveIndex]]
+					if not otherBoidStats then
+						continue
 					end
 
-					if BoidStorage.deleteBoidAtSlot(page, boidIndex, pagedBuffer) then
-						jobCell.boidCount -= 1
+					repulsionDistance = avoidance + otherBoidStats.repulsion
+					otherPosition, otherVelocity = positions[otherLiveIndex], velocities[otherLiveIndex]
+
+					vectorTo = (position - otherPosition)
+					distanceSq = vectorTo:Dot(vectorTo)
+					if distanceSq > math.max(sight, repulsionDistance)^2 then
+						continue
 					end
 
-					continue
+					if distanceSq < repulsionDistance^2 and distanceSq > 0 then
+						closeness += vectorTo.Unit * math.max(repulsionDistance - math.sqrt(distanceSq), 0) * otherBoidStats.repulsionStrength
+						separationCount += 1
+					else
+						avgVelocity += otherVelocity
+						centerOfMass += otherPosition
+						alignmentCount += 1
+						cohesionCount += 1
+					end
+
+					if separationCount + alignmentCount >= MAX_SEEN then
+						break
+					end
+				end
+			end
+
+			if alignmentCount > 0 then
+				avgVelocity /= alignmentCount
+			end
+			if cohesionCount > 0 then
+				centerOfMass /= cohesionCount
+			end
+			if separationCount > 0 then
+				closeness /= separationCount
+			end
+
+			dt = tickDeltaSeconds(currentTick, lastTick)
+			steeringDt = math.min(dt, 0.1)
+
+			targetAcceleration = Vector3.zero
+			toTarget = targetLocal - position
+			if toTarget:Dot(toTarget) > 1 then
+				targetAcceleration = (toTarget.Unit * maxSpeed) * targetBias
+			end
+
+			acceleration =
+				closeness * separation +
+				(avgVelocity - velocity) * alignment +
+				targetAcceleration
+
+			if centerOfMass:Dot(centerOfMass) > 0 then
+				acceleration += (centerOfMass - position).Unit * cohesion
+			end
+
+			maxAcceleration = maxSpeed * maxAccelerationScale
+			if acceleration:Dot(acceleration) > maxAcceleration * maxAcceleration then
+				acceleration = acceleration.Unit * maxAcceleration
+			end
+
+			velocity += acceleration * steeringDt
+
+			--speed = velocity.Magnitude
+			--boidCFrame = CFrame.lookAt(position, position + velocity)
+			--for _, ray:Vector3 in Rays do
+			--	ray = boidCFrame:VectorToWorldSpace(ray.Unit)
+
+			--	raycastResult = workspace:Raycast(origin + position, ray * speed)
+			--	if raycastResult then
+			--		normal = raycastResult.Normal
+			--		velocity +=
+			--			(velocity - 2 * (velocity:Dot(normal)) * normal) * (speed - raycastResult.Distance)^1
+			--		--(boidPosition - raycastResult.Position)
+			--	end
+			--end
+
+			-- clamp speed
+			speed = math.clamp(velocity.Magnitude, minSpeed, maxSpeed)
+			velocity = velocity.Unit
+
+			position += velocity * speed * dt
+			x, y, z = position.X, position.Y, position.Z
+			if  x < 0 or x >= CELL_SIZE
+				or y < 0 or y >= CELL_SIZE
+				or z < 0 or z >= CELL_SIZE
+			then
+				worldPosition = origin + position
+
+				local gx:number, gy:number, gz:number = Quantization.convertCoordsToGrid(
+					worldPosition.X,
+					worldPosition.Y,
+					worldPosition.Z
+				)
+
+				newOrigin = Vector3.new(gx, gy, gz)
+				newCellId = Quantization.getNumericalKey(gx, gy, gz)
+
+				networkVelocity = velocity * speed
+
+				movedCell = movedBoids[newCellId]
+				if not movedCell then
+					movedCell = {}
+					movedBoids[newCellId] = movedCell
 				end
 
-				writeNewData(page.data, boidIndex, position, velocity, speed, currentTick, pathNode, pathVersion)
+				table.insert(movedCell, boidId)
+				table.insert(movedCell, worldPosition)
+				table.insert(movedCell, networkVelocity)
 
 				if shouldEmitSnapshot then
+					movedCellSnapshot = NetworkResults.getOrCreateCellSnapshot(
+						simulationSnapshot,
+						snapshotByCellId,
+						newCellId,
+						newOrigin,
+						1
+					)
+
 					NetworkResults.appendBoid(
-						cellSnapshot,
+						movedCellSnapshot,
 						boidId,
-						position,
-						velocity * speed
+						worldPosition - newOrigin,
+						networkVelocity
 					)
 				end
+
+				if BoidStorage.deleteBoidAtSlot(page, boidIndex, pagedBuffer) then
+					jobCell.boidCount -= 1
+				end
+
+				continue
+			end
+
+			writeNewData(page.data, boidIndex, position, velocity, speed, currentTick, pathNode, pathVersion)
+
+			if shouldEmitSnapshot then
+				NetworkResults.appendBoid(
+					cellSnapshot,
+					boidId,
+					position,
+					velocity * speed
+				)
 			end
 		end
 	end

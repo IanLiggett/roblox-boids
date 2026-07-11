@@ -1,6 +1,22 @@
 --!strict
 --!native
 
+--[[ LazyHeaps
+Description:
+	Binary heap wrapper that lazily removes invalid values from the top using a
+	caller-provided id validator.
+
+Public API:
+	newLazyHeap(isValid: (id: number) -> boolean, compareWith: ((number, number) -> number)?, list: {BinaryHeapEntry}?, initialCapacity: number?): LazyHeap
+	size(lazyHeap: LazyHeap): number
+	empty(lazyHeap: LazyHeap): boolean
+	push(lazyHeap: LazyHeap, priority: number, value: number): ()
+	pop(lazyHeap: LazyHeap): (number?, number?)
+	peek(lazyHeap: LazyHeap): (number?, number?)
+	peekValue(lazyHeap: LazyHeap): number?
+	clear(lazyHeap: LazyHeap): ()
+]]
+
 local module = {}
 
 local BinaryHeaps = require(script.Parent)

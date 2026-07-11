@@ -3,17 +3,18 @@
 
 --[[ BinaryHeaps
 Description:
-	A simple implementation of a BinaryHeap. Stores the heap in buffers.
+	Buffer-backed binary heap storing numeric priority/value pairs. Defaults to
+	a min-heap and accepts an optional comparison function.
 
-Public API: (self explanatory, follows common patterns for a binary heap api)
-	size(binaryHeap:BinaryHeap):number
-	empty(binaryHeap:BinaryHeap):boolean
-	newBinaryHeap(compareWith:(priority1:number, priority2:number)->number, list, initialCapacity):BinaryHeap
-	push(binaryHeap:BinaryHeap, priority:number, value:number)
-	pop(binaryHeap:BinaryHeap):(number?, number?)
-	peek(binaryHeap:BinaryHeap):(number?, number?)
-	peekValue(binaryHeap:BinaryHeap):number?
-	clear(binaryHeap:BinaryHeap)
+Public API:
+	newBinaryHeap(compareWith: ((number, number) -> number)?, list: {BinaryHeapEntry}?, initialCapacity: number?): BinaryHeap
+	size(binaryHeap: BinaryHeap): number
+	empty(binaryHeap: BinaryHeap): boolean
+	push(binaryHeap: BinaryHeap, priority: number, value: number): ()
+	pop(binaryHeap: BinaryHeap): (number?, number?)
+	peek(binaryHeap: BinaryHeap): (number?, number?)
+	peekValue(binaryHeap: BinaryHeap): number?
+	clear(binaryHeap: BinaryHeap): ()
 ]]
 
 local module = {}

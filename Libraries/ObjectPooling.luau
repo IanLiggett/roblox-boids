@@ -1,3 +1,20 @@
+--[[ ObjectPooling
+Description:
+	Named object-pool helper. Creates objects through a caller-provided
+	constructor, tracks pooled instances by name, and removes destroyed objects
+	from the pool automatically.
+
+Public API:
+	NewObjectPool(ObjectConstructor: (...any) -> Instance, Name: string): ObjectPool
+	GetObjectPool(Name: string): ObjectPool?
+
+ObjectPool API:
+	NewObject(...): Instance
+	WithdrawObject(): Instance?
+	ReturnObject(Object: Instance): ()
+	Clear(): ()
+]]
+
 local module = {}
 local ObjectPools = {}
 

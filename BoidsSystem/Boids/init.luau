@@ -1,6 +1,20 @@
 --!native
 --!strict
 
+--[[ Boids
+Description:
+	Server-side boid simulation coordinator. Owns groups and cells, stores boids
+	in paged buffers, schedules cell jobs across parallel Actors, merges worker
+	results, and broadcasts snapshot packets to clients.
+
+Public API:
+	newGroup(defaultBoidModel: BoidModel): Group
+	destroyGroup(group: Group): ()
+	newBoid(group: Group, position: Vector3, velocity: Vector3, maxSpeed: number, minSpeed: number, sight: number, avoidance: number, separation: number, repulsion: number, repulsionStrength: number, alignment: number, cohesion: number, targetBias: number, model: BoidModel?): number?
+	deleteBoid(group: Group, boidId: number): ()
+	setTarget(group: Group, target: Target, debugs: boolean?): ()
+]]
+
 local module = {}
 
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -302,16 +316,16 @@ local function addBoidToCell(
 	end
 end
 
-local MAX_BOIDS = 2^16 - 1
+local MAX_BOIDS = 2^16
 
 local freeBoidIds:buffer = buffer.create(MAX_BOIDS * U16_SIZE)
-for i = 1, MAX_BOIDS do
-	buffer.writeu16(freeBoidIds, (i-1)*U16_SIZE, i)
+for i = 0, MAX_BOIDS - 1 do
+	buffer.writeu16(freeBoidIds, i * U16_SIZE, i)
 end
 local nextFreeIndex = 0
 
 local function claimBoidId():number?
-	if nextFreeIndex >= MAX_BOIDS then
+	if nextFreeIndex / U16_SIZE >= MAX_BOIDS then
 		return nil
 	end
 	
@@ -482,6 +496,8 @@ local function handleJobResults(groupSchedulee:Schedulee<Group>, actor:ActorStat
 		local boid = testParts[boidId]
 
 		if not boid then
+			local rng: Random = Random.new(group.id)
+			
 			boid = Instance.new("Part")
 			boid.Anchored = true
 			boid.CanCollide = false
@@ -489,6 +505,7 @@ local function handleJobResults(groupSchedulee:Schedulee<Group>, actor:ActorStat
 			boid.CanTouch = false
 			boid.Size = Vector3.new(1, 1, 3)
 			boid.Parent = workspace
+			boid.Color = Color3.new((rng:NextNumber() + 0.5) / 2, (rng:NextNumber() + 0.5) / 2, (rng:NextNumber() + 0.5) / 2)
 			testParts[boidId] = boid
 		end
 

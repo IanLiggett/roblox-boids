@@ -2,6 +2,16 @@
 --!strict
 
 --[[ Boids Stats Batch
+Description:
+	Batches static boid configuration for worker Actors and broadcasts compact
+	spawn/model data to clients.
+
+Public API:
+	BOID_STATS_ROW_SIZE: number
+	readBoidRow(data: buffer, index: number): (number, number, number, number, number, number, number, number, number, number, number)
+	newBoidsStatsUpdate(groupId: number, batchSize: number?, lifetime: number?, inactivityThreshold: number?, defaultBoidModel: BoidModel): BoidsStatsBatch
+	addBoidToBatch(batch: BoidsStatsBatch, boidId: number, maxSpeed: number, minSpeed: number, sight: number, avoidance: number, separation: number, repulsion: number, repulsionStrength: number, alignment: number, cohesion: number, targetBias: number, boidModel: BoidModel?): ()
+	sendBatch(batch: BoidsStatsBatch): ()
 
 Single-buffer AoS layout:
 	Each boid is one fixed-size row inside `data`.

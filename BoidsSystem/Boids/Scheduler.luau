@@ -1,6 +1,24 @@
 --!strict
 --!native
 
+--[[ Scheduler
+Description:
+	Generic heap-backed scheduler for entities with numeric ids. Uses lazy heap
+	invalidation to enqueue schedulees cheaply while discarding stale heap nodes
+	when they reach the top.
+
+Public API:
+	newScheduler<T>(wakeTimeCalculator: (Schedulee<T>) -> number, scheduleeValidator: (Schedulee<T>, number) -> boolean, compare: ((number, number) -> number)?): Scheduler<T>
+	newSchedulee<T>(scheduler: Scheduler<T>, entity: T & { id: number }, interval: number): Schedulee<T>
+	enqueueSchedulee<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>): ()
+	scheduleSchedulee<T>(schedulee: Schedulee<T>): ()
+	releaseSchedulee<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>): ()
+	markScheduleeCompleted<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>, completionTime: number): ()
+	getNextSchedulee<T>(scheduler: Scheduler<T>, now: number): Schedulee<T>?
+	peekNextWakeTime<T>(scheduler: Scheduler<T>): number?
+	rebuildSchedulerHeap<T>(scheduler: Scheduler<T>): ()
+]]
+
 local module = {}
 
 local BoidsReplicated = game:GetService("ReplicatedStorage"):WaitForChild("BoidsReplicated") :: typeof(script.Parent.Parent.BoidsReplicated)

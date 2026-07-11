@@ -1,6 +1,29 @@
 --!strict
 --!native
 
+--[[ Quantization
+Description:
+	Shared helpers for converting positions, velocities, simulation ticks, and
+	world coordinates into compact deterministic representations used by server,
+	worker, storage, and network code.
+
+Public API:
+	MAX_U8_INT, MAX_U16_INT, CELL_SIZE, NORM_VELOCITY_MIN, NORM_VELOCITY_RANGE, VELOCITY_MIN, VELOCITY_RANGE
+	quantizePositionAxis(axis: number, maxInt: number): number
+	dequantizePositionAxis(encoded: number, maxInt: number): number
+	quantizeVelocityAxis(axis: number, minVelocity: number, velocityRange: number, maxInt: number): number
+	dequantizeVelocityAxis(encoded: number, minVelocity: number, velocityRange: number, maxInt: number): number
+	write/read quantized U8 and U16 positions and velocities
+	readVector(buf: buffer, index: number): (number, number, number)
+	writeVector(buf: buffer, x: number, y: number, z: number, index: number): ()
+	currentSimTick(): number
+	writeLastTick(buf: buffer, index: number, tick: number): ()
+	readLastTick(buf: buffer, index: number): number
+	tickDeltaSeconds(currentTick: number, lastTick: number): number
+	getNumericalKey(x: number, y: number, z: number): number
+	convertCoordsToGrid(x: number, y: number, z: number): (number, number, number)
+]]
+
 local module = {}
 
 local U8_SIZE:number = 1

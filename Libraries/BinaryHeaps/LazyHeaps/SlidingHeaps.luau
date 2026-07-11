@@ -1,6 +1,21 @@
 --!strict
 --!native
 
+--[[ SlidingHeaps
+Description:
+	Lazy heap variant for a fixed-size sliding window of numeric values. New
+	pushes invalidate values that fall out of the window.
+
+Public API:
+	newSlidingHeap(windowLength: number?, compareWith: ((number, number) -> number)?, list: {BinaryHeapEntry}?): SlidingHeap
+	size(slidingHeap: SlidingHeap): number
+	empty(slidingHeap: SlidingHeap): boolean
+	push(slidingHeap: SlidingHeap, value: number): number?
+	pop(slidingHeap: SlidingHeap): number?
+	peek(slidingHeap: SlidingHeap): number?
+	clear(slidingHeap: SlidingHeap): ()
+]]
+
 local module = {}
 
 local LazyHeaps = require(script.Parent)

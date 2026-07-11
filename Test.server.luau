@@ -1,5 +1,14 @@
 --!native
 
+--[[ Boid Stress Test
+Description:
+	Server-side load test that creates boid groups, spawns many boids per group,
+	periodically changes group targets, and prints benchmark results on shutdown.
+
+Public API:
+	None. This is an executable server script.
+]]
+
 local Boids = require(game:GetService("ServerScriptService").BoidsSystem.Boids)
 local Benchmarkers = require(game:GetService("ReplicatedStorage").Libraries.Benchmarker)
 local SharedTypes = require(game:GetService("ReplicatedStorage").BoidsReplicated.SharedTypes)
@@ -16,7 +25,7 @@ local function BulkTest(boidCount)
 	table.insert(groups, BoidGroup)
 	
 	for i = 1, boidCount do
-		local isPredator: boolean = rng:NextNumber() > 0.99
+		local isPredator: boolean = false--rng:NextNumber() > 0.99
 		
 		local Theta = (i / boidCount) * math.pi*2
 		
@@ -54,7 +63,7 @@ end
 --BulkTest(2000)
 
 local function multiGroupStressTest()
-	local groups = 5
+	local groups = 10
 	local boidsPerGroup = 2000
 	for i = 1, groups do
 		BulkTest(boidsPerGroup)

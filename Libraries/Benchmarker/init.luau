@@ -1,6 +1,23 @@
 --!strict
 --!native
 
+--[[ Benchmarker
+Description:
+	Rolling-window numeric statistics helper. Tracks average, median, min, max,
+	standard deviation, and optional stale counts using buffer-backed lazy heaps.
+
+Public API:
+	newBenchmarker(windowLength: number?, staleThreshold: number?): Benchmarker
+	push(benchmarker: Benchmarker, item: number): ()
+	getMin(benchmarker: Benchmarker): number?
+	getMax(benchmarker: Benchmarker): number?
+	getAvg(benchmarker: Benchmarker): number
+	getMed(benchmarker: Benchmarker): number
+	getSD(benchmarker: Benchmarker): number
+	printStats(benchmarker: Benchmarker): ()
+	clear(benchmarker: Benchmarker): ()
+]]
+
 local module = {}
 
 local Dependencies = script.Dependencies

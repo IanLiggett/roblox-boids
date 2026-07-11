@@ -1,6 +1,22 @@
 --!strict
 --!native
 
+--[[ NetworkResults
+Description:
+	Builds compact network snapshot buffers from simulated cell snapshots and
+	provides iterators for reading those buffers on the client.
+
+Public API:
+	MAX_PACKET_BYTES: number
+	BOID_ROW_BYTES: number
+	newCellSnapshot(capacity: number, origin: Vector3): CellSnapshot
+	getOrCreateCellSnapshot(simulationSnapshot: SimulationSnapshot, snapshotByCellId: {[number]: CellSnapshot}, cellId: number, origin: Vector3, capacityHint: number?): CellSnapshot
+	appendBoid(cellSnapshot: CellSnapshot, boidId: number, localPosition: Vector3, velocity: Vector3): ()
+	convertSimulationSnapshotToPackets(simulationSnapshot: SimulationSnapshot): SnapshotPackets
+	forEachCellHeader(packet: BoidPacket): () -> (number?, number?, number?, number?, number?)
+	forEachBoid(packet: BoidPacket, offset: number, boidCount: number): () -> (number?, number?, number?, number?, number?, number?, number?)
+]]
+
 local module = {}
 
 local SharedTypes = require(script.Parent.SharedTypes)

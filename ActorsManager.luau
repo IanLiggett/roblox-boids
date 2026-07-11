@@ -1,3 +1,13 @@
+--[[ ActorsManager
+Description:
+	Creates and owns a fixed pool of Roblox Actors for parallel script execution.
+	Clones requested scripts/modules into Actors in round-robin order.
+
+Public API:
+	MultiThreadModule(moduleToClone: Script | ModuleScript | LocalScript, moduleCount: number): {Instance}
+	getActorCount(): number
+]]
+
 local module = {}
 local actors = {}
 

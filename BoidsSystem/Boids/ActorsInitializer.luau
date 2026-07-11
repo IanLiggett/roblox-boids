@@ -1,3 +1,13 @@
+--[[ ActorsInitializer
+Description:
+	Initializes boid worker scripts across the Actor pool and tracks per-Actor
+	scheduling/performance state used by the server simulation scheduler.
+
+Public API:
+	actors: {ActorState}
+	initializeBoidActors(): ()
+]]
+
 local module = {}
 
 local ActorsManager = require(game:GetService("ServerScriptService"):QueryDescendants(">> .actors-manager-module")[1])

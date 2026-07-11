@@ -1,6 +1,34 @@
 --!strict
 --!native
 
+--[[ BoidStorage
+Description:
+	Packed paged storage for boid simulation state. Stores boids in fixed-size
+	buffer rows inside 64-slot pages, tracks deleted slots with bitsets, and
+	manages pending pages while worker jobs mutate cell data.
+
+Public API:
+	PageRegistry: {[number]: Page}
+	BoidRegistry: {[number]: BoidEntry}
+	BOID_ROW_BYTES, PAGE_CAPACITY, BOID_ID_SIZE, and row offset constants
+	boidOffset(slot: number): number
+	read/write helpers for id, position, velocity, speed, lastTick, pathNode, and pathVersion
+	newPage(pagedBuffer: PagedBuffer): Page
+	newPagedBuffer(): PagedBuffer
+	deletePagedBuffer(pagedBufferId: number): ()
+	appendPage(pagedBuffer: PagedBuffer, page: Page): ()
+	getOpenPage(pagedBuffer: PagedBuffer): Page
+	insertBoid(pagedBuffer: PagedBuffer, px: number, py: number, pz: number, vx: number, vy: number, vz: number, currentTick: number, boidId: number, cellId: number): ()
+	deleteBoidAtSlot(page: Page, slot: number, pagedBuffer: PagedBuffer?): boolean
+	deleteBoid(boidId: number): ()
+	removePage(pagedBuffer: PagedBuffer, page: Page): ()
+	liveWords(page: Page): () -> (number?, number?)
+	countLive(pages: {Page}): number
+	restorePendingPages(pagedBuffer: PagedBuffer): ()
+	markPagesPending(pagedBuffer: PagedBuffer): ()
+	overwriteWithJobResults(dest: PagedBuffer, src: PagedBuffer, lockedPageCount: number): ()
+]]
+
 local module = {}
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

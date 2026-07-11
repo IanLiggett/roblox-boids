@@ -1,5 +1,18 @@
 --!strict
 
+--[[ SharedTypes
+Description:
+	Shared type definitions and boid model ids used by server, Actor workers,
+	replicated storage helpers, and client rendering code.
+
+Public API:
+	Exported types: Page, PagedBuffer, Target, BoidPacket, SnapshotPackets,
+	CellSnapshot, SimulationSnapshot, JobCell, Job, NetworkBoidsBatch,
+	BoidModelName, and BoidModel.
+	BoidModels: frozen map of model names to numeric ids
+	BoidModelNames: reverse lookup from numeric ids to model names
+]]
+
 local module = {}
 
 export type Page = {
