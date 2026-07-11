@@ -5,7 +5,7 @@
 Description:
 	Client-side boid renderer. Receives spawn batches and unreliable simulation
 	snapshots, instantiates boid models, smooths/extrapolates render state, and
-	moves visible boids with Motor6D transforms.
+	moves visible boids with BulkMoveTo.
 
 Runtime API:
 	NewBoidBatch.OnClientEvent(networkBoidsBatch: NetworkBoidsBatch): creates render models
@@ -61,7 +61,6 @@ local boidsByGroup = {}
 local groupFolders:{[number]: Folder} = {}
 
 local renderParts: {BasePart} = {}
-local renderMotors: {Motor6D} = {}
 local renderCFrames: {CFrame} = {}
 
 local renderIndexByBoid: {[number]: number} = {}
@@ -93,9 +92,9 @@ local U8_SIZE: number = 1
 local U16_SIZE: number = 2
 local U32_SIZE: number = 4
 
-local POSITION_CORRECTION_GAIN: number = 3
-local VELOCITY_CORRECTION_GAIN: number = 2
-local MAX_CORRECTION_SPEED: number = 20
+local POSITION_CORRECTION_GAIN: number = 10
+local VELOCITY_CORRECTION_GAIN: number = 8
+local MAX_CORRECTION_SPEED: number = 50
 local MAX_EXTRAPOLATION: number = 20
 
 local BASE_RENDER_INTERVAL: number = 1/60
@@ -136,6 +135,7 @@ RunService.RenderStepped:Connect(function()
 	local cameraLookDir: Vector3 = Camera.CFrame.LookVector
 	local cameraPosition: Vector3 = Camera.CFrame.Position
 	local toBoid: Vector3
+	local distanceFromCamera: number
 		
 	local renderPosition: Vector3?, renderVelocity: Vector3?, snapshotAge: number, predictedServerPosition: Vector3, positionError: Vector3, correctionVelocity: Vector3
 	local state: BoidRenderState?, boidId: number, latest: Snapshot?
@@ -157,24 +157,22 @@ RunService.RenderStepped:Connect(function()
 			renderPosition = latest.position
 			renderVelocity = latest.velocity
 		end
-
-		snapshotAge = math.clamp(now - latest.time, 0, MAX_EXTRAPOLATION)
-		predictedServerPosition = latest.position + latest.velocity * snapshotAge
 		
-		toBoid = predictedServerPosition - cameraPosition
-		if toBoid.Unit:Dot(cameraLookDir) < FOVRadDot then
-			state.outOfView = true
-			state.renderPosition = predictedServerPosition
-			state.renderVelocity = latest.velocity
-			state.nextRenderTime = now + BASE_RENDER_INTERVAL
-
-			continue
-		end
+		toBoid = (renderPosition :: Vector3) - cameraPosition
 		
 		state.renderInterval = math.max(BASE_RENDER_INTERVAL * (toBoid.Magnitude - LOD_START) * LOD_SCALE, BASE_RENDER_INTERVAL)
 		repeat
 			state.nextRenderTime += state.renderInterval
 		until state.nextRenderTime > now
+		
+		if toBoid.Unit:Dot(cameraLookDir) < FOVRadDot then
+			state.outOfView = true
+			
+			continue
+		end
+		
+		snapshotAge = math.clamp(now - latest.time, 0, MAX_EXTRAPOLATION)
+		predictedServerPosition = latest.position + latest.velocity * snapshotAge
 		
 		if state.outOfView then
 			state.outOfView = false
@@ -182,8 +180,7 @@ RunService.RenderStepped:Connect(function()
 			-- if implement sparse position updates, use lastupdate for position to calculate predictedserverposition, not just last update, since it may have only included velocity
 			
 			renderVelocity = latest.velocity
-			--renderCFrames[index] = CFrame.lookAt(predictedServerPosition, predictedServerPosition + renderVelocity :: Vector3)
-			renderMotors[index].Transform = CFrame.lookAt(predictedServerPosition, predictedServerPosition + safeLookDirection(renderVelocity))
+			renderCFrames[index] = CFrame.lookAt(predictedServerPosition, predictedServerPosition + renderVelocity :: Vector3)
 			
 			state.renderPosition = predictedServerPosition
 			state.renderVelocity = renderVelocity
@@ -209,16 +206,14 @@ RunService.RenderStepped:Connect(function()
 		state.renderVelocity = renderVelocity
 
 		renderVelocity = safeLookDirection(renderVelocity)
-		
-		renderMotors[index].Transform = CFrame.lookAt((renderPosition :: Vector3), (renderPosition :: Vector3) + renderVelocity)
-		--renderCFrames[index] = CFrame.lookAt((renderPosition :: Vector3), (renderPosition :: Vector3) + renderVelocity)
+		renderCFrames[index] = CFrame.lookAt((renderPosition :: Vector3), (renderPosition :: Vector3) + renderVelocity)
 	end
 
-	--workspace:BulkMoveTo(
-	--	renderParts :: {Instance},
-	--	renderCFrames,
-	--	Enum.BulkMoveMode.FireCFrameChanged
-	--)
+	workspace:BulkMoveTo(
+		renderParts :: {Instance},
+		renderCFrames,
+		Enum.BulkMoveMode.FireCFrameChanged
+	)
 end)
 
 local snapshotIntervalStats: Benchmarker = Benchmarkers.newBenchmarker(10000)
@@ -228,6 +223,8 @@ local bytesPerPacketStats: Benchmarker = Benchmarkers.newBenchmarker(2000)
 
 local bytesPerSecondStats: Benchmarker = Benchmarkers.newBenchmarker(120)
 local boidRowsPerSecondStats: Benchmarker = Benchmarkers.newBenchmarker(120)
+
+local networkErrorStats: Benchmarker = Benchmarkers.newBenchmarker(2000)
 
 local SNAPSHOT_SAMPLE_MOD = 8
 
@@ -253,6 +250,10 @@ local function pushSnapshot(boidId: number, serverTime: number, position: Vector
 		velocity = velocity,
 	}
 	state.latest = state.b
+	
+	if state.renderPosition then
+		Benchmarkers.push(networkErrorStats, (state.renderPosition - (position + velocity * (workspace:GetServerTimeNow() - serverTime))).Magnitude)
+	end
 	
 	--renderCFrames[boidId] = CFrame.lookAt(position, position + velocity)
 end
@@ -342,7 +343,7 @@ end)
 
 local nextRenderPartIndex = 1
 
-local function registerBoid(boidId: number, boid: Model | BasePart, now: number, motor: Motor6D)
+local function registerBoid(boidId: number, boid: Model | BasePart, now: number)
 	local part: BasePart
 
 	if boid:IsA("Model") then
@@ -350,14 +351,13 @@ local function registerBoid(boidId: number, boid: Model | BasePart, now: number,
 	else
 		part = boid
 	end
-	--part.Anchored = true
+	part.Anchored = true
 	part.CanCollide = false
 	part.CanTouch = false
 	part.CanQuery = false
 	
 	local index:number = nextRenderPartIndex
 	renderParts[index] = part
-	renderMotors[index] = motor
 	renderCFrames[index] = part.CFrame
 	
 	lastSnapshotTimeByBoid[boidId] = now
@@ -393,7 +393,6 @@ local function unregisterBoid(boidId: number)
 	local lastBoidId = boidIdByRenderIndex[lastIndex]
 
 	renderParts[index] = lastPart
-	renderMotors[index] = renderMotors[lastIndex]
 	renderCFrames[index] = renderCFrames[lastIndex]
 	boidIdByRenderIndex[index] = lastBoidId
 
@@ -402,7 +401,6 @@ local function unregisterBoid(boidId: number)
 	end
 
 	renderParts[lastIndex] = nil
-	renderMotors[lastIndex] = nil
 	renderCFrames[lastIndex] = nil
 	boidIdByRenderIndex[lastIndex] = nil
 
@@ -415,15 +413,6 @@ end
 local groupColors = {}
 
 local totalBoidsRegistered = 0
-
-local shenanigansPart: Part = Instance.new("Part")
-shenanigansPart.Anchored = true
-shenanigansPart.Transparency = 1
-shenanigansPart.CanCollide = false
-shenanigansPart.CanQuery = false
-shenanigansPart.CanTouch = false
-shenanigansPart.Position = Vector3.zero
-shenanigansPart.Parent = workspace
 
 -- reconsider system structure to allow client access to this type
 -- client doesn't necessarily need behavior from BoidBatches, so moving it to replicated storage probably isn't best
@@ -468,14 +457,7 @@ newBoidBatch.OnClientEvent:Connect(function(networkBoidsBatch:NetworkBoidsBatch)
 		newBoidModel.Color = groupColors[groupId]
 		newBoidModel.Parent = groupFolder
 		
-		local motor: Motor6D = Instance.new("Motor6D")
-		motor.MaxVelocity = 100000
-		motor.Part0 = shenanigansPart
-		motor.Part1 = newBoidModel
-		motor.Name = "shenanigans"
-		motor.Parent = shenanigansPart
-		
-		registerBoid(boidId, newBoidModel, now, motor)
+		registerBoid(boidId, newBoidModel, now)
 	end
 	
 	totalBoidsRegistered += boidCount
@@ -543,6 +525,9 @@ local function printStats()
 	print(`BOIDS UPDATED PER SECOND:`)
 	Benchmarkers.printStats(boidRowsPerSecondStats)
 	
+	print(`NETWORK ERROR: STUDS`)
+	Benchmarkers.printStats(networkErrorStats)
+	
 	--local avgSnapshotMs = Benchmarkers.getAvg(snapshotIntervalStats)
 	--local medSnapshotMs = Benchmarkers.getMed(snapshotIntervalStats)
 	
@@ -584,6 +569,6 @@ end
 
 task.spawn(function()
 	while task.wait(5) do
-		--printStats()
+		printStats()
 	end
 end)

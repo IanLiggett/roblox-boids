@@ -25,7 +25,7 @@ local function BulkTest(boidCount)
 	table.insert(groups, BoidGroup)
 	
 	for i = 1, boidCount do
-		local isPredator: boolean = false--rng:NextNumber() > 0.99
+		local isPredator: boolean = rng:NextNumber() > 0.99
 		
 		local Theta = (i / boidCount) * math.pi*2
 		

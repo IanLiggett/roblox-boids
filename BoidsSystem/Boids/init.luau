@@ -95,10 +95,10 @@ local nextGroupId = 0
 -- loose line in sand, it will schedule cells until passing this threshold. It's fine if it schedules a large cell all at once, but this helps make sure that many smaller cells don't get rate limited too hard if boids are spread out
 -- at 100 boids per frame that supports 6000 boids at 1 hz
 
-local DEFAULT_CELL_UPDATE_INTERVAL:number = 2.0
-local MAX_ALLOWED_CELL_STALENESS:number = 3.0
+local DEFAULT_CELL_UPDATE_INTERVAL:number = 1.0
+local MAX_ALLOWED_CELL_STALENESS:number = 1.5
 
-local DESIRED_MAX_BOIDS = 20000
+local DESIRED_MAX_BOIDS = 40000
 local MAX_BOIDS_PER_FRAME:number = (DESIRED_MAX_BOIDS / DEFAULT_CELL_UPDATE_INTERVAL) // 60
 
 local ACTORS_COUNT = 8
@@ -263,7 +263,7 @@ local function newCell(group:Group, origin:Vector3, cellId:number?):Cell
 		pages = BoidStorage.newPagedBuffer(),
 		
 		networkTick = 1,
-		networkInterval = 2,
+		networkInterval = 6,
 		
 		visualizer = nil-- createCellOutline(origin),
 	}
