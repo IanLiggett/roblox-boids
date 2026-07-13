@@ -43,7 +43,9 @@ export type Schedulee<T> = {
 
 	lastUpdated: number,
 	nextDue: number,
+	
 	interval: number,
+	intervalMultiplier: number,
 
 	heapVersion: number,
 }
@@ -84,6 +86,63 @@ local function scheduleeJitter(id: number): number
 	return (id % 997) / 997 * 0.5
 end
 
+function module.newSchedulee<T>(scheduler: Scheduler<T>, entity: ScheduleeEntityShape<T>, interval: number): Schedulee<T>
+	local now: number = workspace:GetServerTimeNow()
+
+	local schedulee: Schedulee<T> = {
+		entity = entity,
+		alreadyScheduled = false,
+
+		nextDue = now + scheduleeJitter(entity.id),
+		lastUpdated = now,
+		
+		interval = interval,
+		intervalMultiplier = 1,
+
+		heapVersion = 0,
+	}
+
+	scheduler.schedulees[entity.id] = schedulee
+	module.enqueueSchedulee(scheduler, schedulee)
+
+	return schedulee
+end
+
+function module.effectiveInterval<T>(schedulee: Schedulee<T>): number
+	return schedulee.interval * schedulee.intervalMultiplier
+end
+
+function module.setIntervalMultiplier<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>, multiplier: number, now: number)
+	multiplier = math.max(1, multiplier // 1)
+
+	const oldInterval = module.effectiveInterval(schedulee)
+	if schedulee.intervalMultiplier == multiplier then
+		return
+	end
+
+	schedulee.intervalMultiplier = multiplier
+
+	const newInterval = module.effectiveInterval(schedulee)
+	const targetDue = schedulee.lastUpdated + newInterval
+
+	if newInterval < oldInterval then
+		schedulee.nextDue = math.min(schedulee.nextDue, targetDue)
+	else
+		schedulee.nextDue = math.max(schedulee.nextDue, targetDue)
+	end
+
+	if not schedulee.alreadyScheduled then
+		module.enqueueSchedulee(scheduler, schedulee)
+	else
+		schedulee.heapVersion += 1
+	end
+end
+
+function module.scheduleSchedulee<T>(schedulee: Schedulee<T>)
+	schedulee.alreadyScheduled = true
+	schedulee.heapVersion += 1
+end
+
 function module.enqueueSchedulee<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>)
 	schedulee.heapVersion += 1
 
@@ -98,31 +157,6 @@ function module.enqueueSchedulee<T>(scheduler: Scheduler<T>, schedulee: Schedule
 	}
 
 	BinaryHeaps.push(scheduler.heap, wakeTime, nodeId)
-end
-
-function module.newSchedulee<T>(scheduler: Scheduler<T>, entity: ScheduleeEntityShape<T>, interval: number): Schedulee<T>
-	local now: number = workspace:GetServerTimeNow()
-
-	local schedulee: Schedulee<T> = {
-		entity = entity,
-		alreadyScheduled = false,
-
-		nextDue = now + scheduleeJitter(entity.id),
-		lastUpdated = now,
-		interval = interval,
-
-		heapVersion = 0,
-	}
-
-	scheduler.schedulees[entity.id] = schedulee
-	module.enqueueSchedulee(scheduler, schedulee)
-
-	return schedulee
-end
-
-function module.scheduleSchedulee<T>(schedulee: Schedulee<T>)
-	schedulee.alreadyScheduled = true
-	schedulee.heapVersion += 1
 end
 
 function module.releaseSchedulee<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>)

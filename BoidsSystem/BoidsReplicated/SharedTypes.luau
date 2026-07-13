@@ -15,30 +15,6 @@ Public API:
 
 local module = {}
 
-export type Page = {
-	id: number,
-	setId: number,
-
-	index: number,
-	size: number,
-
-	deadCount: number,
-	firstDeadWord: number,
-	cursor: number,
-
-	data: buffer,
-	dead: buffer,
-}
-
-export type PagedBuffer = {
-	id: number,
-	pages: {Page},
-	openPages:{[number]: boolean},
-	pendingPages:{[number]: boolean},
-
-	pageCount: number
-}
-
 export type Target = {
 	Position: Vector3
 }
@@ -52,7 +28,10 @@ export type CellSnapshot = {
 
 	networkBoids: buffer
 }
+
 export type SimulationSnapshot = {[number]: CellSnapshot}
+
+export type SnapshotGroupsBySourceCell = {[number] : SimulationSnapshot}
 
 export type JobCell = {
 	id: number,
@@ -61,16 +40,18 @@ export type JobCell = {
 	networkTick: number,
 	networkInterval: number,
 	
+	emitSnapshot: boolean,
+	
 	pages: PagedBuffer,
 	pageCount: number,
-	boidCount: number,
+	boidCount: number
 }
 
 export type Job = {
 	id: number,
 	groupId: number,
 	
-	snapshotPackets: SnapshotPackets?,
+	snapshotGroups: SnapshotGroupsBySourceCell?,
 	
 	jobCells:{[number]:JobCell},
 	movedBoids:{[number]:{number | Vector3}},

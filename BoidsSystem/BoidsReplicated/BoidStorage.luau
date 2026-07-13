@@ -35,8 +35,31 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated") :: typeof(script.Parent.Parent.BoidsReplicated)
 
-local SharedTypes = require(BoidsReplicated.SharedTypes)
 local Quantization = require(BoidsReplicated.Quantization)
+
+export type Page = {
+	id: number,
+	setId: number,
+
+	index: number,
+	size: number,
+
+	deadCount: number,
+	firstDeadWord: number,
+	cursor: number,
+
+	data: buffer,
+	dead: buffer,
+}
+
+export type PagedBuffer = {
+	id: number,
+	pages: {Page},
+	openPages:{[number]: boolean},
+	pendingPages:{[number]: boolean},
+
+	pageCount: number
+}
 
 local writeQuantizedPositionU8 = Quantization.writeQuantizedPositionU8
 local writeQuantizedVelocityU8 = Quantization.writeQuantizedVelocityU8
@@ -53,9 +76,6 @@ local readLastTick = Quantization.readLastTick
 
 local NORM_VELOCITY_MIN:number = Quantization.NORM_VELOCITY_MIN
 local NORM_VELOCITY_RANGE:number = Quantization.NORM_VELOCITY_RANGE
-
-type Page = SharedTypes.Page
-type PagedBuffer = SharedTypes.PagedBuffer
 
 local PageRegistry:{[number]:Page} = {}
 module.PageRegistry = PageRegistry

@@ -19,6 +19,9 @@ Public API:
 
 local module = {}
 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
 local SharedTypes = require(script.Parent.SharedTypes)
 local Quantization = require(script.Parent.Quantization)
 local BoidStorage = require(script.Parent.BoidStorage)
@@ -33,6 +36,17 @@ local quantizeVelocityAxis = Quantization.quantizeVelocityAxis
 local dequantizePositionAxis = Quantization.dequantizePositionAxis
 local dequantizeVelocityAxis = Quantization.dequantizeVelocityAxis
 
+type PlayerPacketAccumulator = {
+	pendingSnapshotsByCellId: {[number]: CellSnapshot},
+	pendingCellIds: {number},
+	pendingCellIndexById: {[number]: number},
+
+	oldestPendingTime: number?,
+	lastFlushTime: number,
+
+	estimatedBytes: number,
+}
+
 local CELL_SIZE: number = Quantization.CELL_SIZE
 
 local U8_SIZE: number = 1
@@ -42,9 +56,6 @@ local MAX_U8: number = 2^8 - 1
 
 -- Budgeting estimate:
 -- origin Vector3 ~= 12 bytes, plus 1 byte-ish for count/header.
--- The actual Roblox table serialization has some overhead, so lower this later
--- if unreliable remotes reject/lose too much.
--- UPDATE: it's not perfect, gotta debug this
 
 local PACKET_HEADER_BYTES: number = 1
 local COMPLETION_TIME_BYTES: number = 8
@@ -64,7 +75,8 @@ local ORIGIN_X_OFFSET: number = 0
 local ORIGIN_Y_OFFSET: number = ORIGIN_AXES_SIZE
 local ORIGIN_Z_OFFSET: number = ORIGIN_Y_OFFSET + ORIGIN_AXES_SIZE
 local CELL_BOID_COUNT_OFFSET: number = ORIGIN_Z_OFFSET + ORIGIN_AXES_SIZE
-local CELL_HEADER_BYTES = CELL_BOID_COUNT_OFFSET + CELL_BOID_COUNT_SIZE
+local CELL_HEADER_BYTES: number = CELL_BOID_COUNT_OFFSET + CELL_BOID_COUNT_SIZE
+module.CELL_HEADER_BYTES = CELL_HEADER_BYTES
 
 
 local BOID_ID_OFFSET: number = 0
@@ -80,6 +92,67 @@ module.BOID_ROW_BYTES = BOID_ROW_BYTES
 
 local VELOCITY_MIN: number = Quantization.VELOCITY_MIN
 local VELOCITY_RANGE: number = Quantization.VELOCITY_RANGE
+
+
+local playerAccumulators:{[Player]: PlayerPacketAccumulator} = {}
+
+
+local function estimateCellSnapshotBytes(cellSnapshot: CellSnapshot)
+	return CELL_HEADER_BYTES + cellSnapshot.boidCount * BOID_ROW_BYTES
+end
+
+const MAX_PACKET_AGE: number = 1 / 20
+
+local function shouldFlushPlayer(state: PlayerPacketAccumulator, now: number): boolean
+	if not state.oldestPendingTime then
+		return false
+	end
+
+	if state.estimatedBytes >= MAX_PACKET_BYTES then
+		return true
+	end
+
+	if now - state.oldestPendingTime >= MAX_PACKET_AGE then
+		return true
+	end
+
+	return false
+end
+
+local function flushPlayer(player, state: PlayerPacketAccumulator)
+	
+end
+
+function module.enqueueCellSnapshotForPlayer(playerState: PlayerPacketAccumulator, cellSnapshot: CellSnapshot, now: number)
+	const cellId: number = cellSnapshot.id
+
+	if not playerState.pendingSnapshotsByCellId[cellId] then
+		table.insert(playerState.pendingCellIds, cellId)
+		playerState.pendingCellIndexById[cellId] = #playerState.pendingCellIds
+	end
+
+	-- Replace older unsent state for the same cell.
+	-- maybe need to clear estimatedBytes from it
+	playerState.pendingSnapshotsByCellId[cellId] = cellSnapshot
+
+	if not playerState.oldestPendingTime then
+		playerState.oldestPendingTime = now
+	end
+
+	playerState.estimatedBytes += estimateCellSnapshotBytes(cellSnapshot)
+end
+
+game:GetService("RunService").PostSimulation:Connect(function()
+	local now: number = workspace:GetServerTimeNow()
+	for player: Player, state: PlayerPacketAccumulator in playerAccumulators do
+		if not shouldFlushPlayer(state, now) then
+			continue
+		end
+		
+		flushPlayer(player, state)
+	end
+end)
+
 
 local function boidCapacity(snapshot: CellSnapshot): number
 	return buffer.len(snapshot.networkBoids) // BOID_ROW_BYTES
