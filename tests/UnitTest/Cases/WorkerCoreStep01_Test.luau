@@ -4,6 +4,7 @@ return function(t: any): ()
  local Storage = require(package.BoidStorage)
  local template = game.ServerStorage.UnitTest.Fixtures.WorkerCoreStep01
  local cloneId = 0
+ local lifetime = 1
  local function run(count: number, missingLast: boolean, migrate: boolean, detailed: boolean, buckets: boolean?, reconciliationBatches: any, emitSnapshot: boolean?, raycastProvider: any?, elapsedTicks: number?, initialPosition: Vector3?, initialObstacleDirection: Vector3?): any
   cloneId += 1
   local clone = template:Clone()
@@ -32,7 +33,7 @@ return function(t: any): ()
     buffer.writeu8(stats,i*16+2,20);buffer.writeu8(stats,i*16+3,1)
     buffer.writeu8(stats,i*16+4,16)
    end
-   handlers.NewBoidsStatsBatch({boidCount=registered,data=stats})
+   handlers.NewBoidsStatsBatch({boidCount=registered,data=stats,lifetimes=table.create(registered,lifetime)})
    local pages: {any} = {}
    local tickDelta = if elapsedTicks == nil then (if migrate then 60 else 0) else elapsedTicks
    for start=0,math.max(count-1,0),64 do
@@ -55,11 +56,11 @@ return function(t: any): ()
    local job:any={groupId=1,usesPath=false,jobCells={cell},averageSight=16,detailedMetrics=detailed,movedBoids={}}
    -- The replay boundary receives recorded target/path inputs before every
    -- execution; run() recreates all mutable stats/pages/job tables above.
-   handlers.NewGroupTarget(1, { Position = Vector3.new(320, 40, -80) })
+   handlers.NewGroupTarget(1, { Position = Vector3.new(320, 40, -80) }, lifetime)
    handlers.NewGroupPath(1, {
     { Position = Vector3.new(320, 40, -80), offset = Vector3.zero },
     { Position = Vector3.new(360, 40, -80), offset = Vector3.zero },
-   }, 77, false, true, 8)
+   }, 77, false, true, 8, lifetime)
    job.usesPath = true
    local returned:any
    local event:any={Fire=function(_: any,j: any): () returned=j end}
@@ -286,23 +287,23 @@ return function(t: any): ()
  end)
  -- A batch received before static stats is retained, and repeated rows use the final row in packet order.
  t.test("batched reconciliation preserves pending and repeated-row ordering",function()
-  local first={boidId=1,position=Vector3.new(20,40,40),velocity=Vector3.new(2,0,0),snapshotTime=1}
-  local last={boidId=1,position=Vector3.new(100,40,40),velocity=Vector3.new(4,0,0),snapshotTime=1}
+  local first={boidId=1,position=Vector3.new(20,40,40),velocity=Vector3.new(2,0,0),snapshotTime=1,lifetime=lifetime}
+  local last={boidId=1,position=Vector3.new(100,40,40),velocity=Vector3.new(4,0,0),snapshotTime=1,lifetime=lifetime}
   local batched=run(1,false,false,false,nil,{{first,last}})
   local expected=run(1,false,false,false,nil,{{last}})
   t.expect.equal(buffer.tostring(batched.jobCells[1].pages.pages[1].data),buffer.tostring(expected.jobCells[1].pages.pages[1].data))
  end)
  -- Separate packet deliveries retain their receive ordering, matching the prior singular-message behavior.
  t.test("batched reconciliation preserves packet arrival ordering",function()
-  local newer={boidId=1,position=Vector3.new(100,40,40),velocity=Vector3.new(4,0,0),snapshotTime=1}
-  local older={boidId=1,position=Vector3.new(20,40,40),velocity=Vector3.new(2,0,0),snapshotTime=0}
+  local newer={boidId=1,position=Vector3.new(100,40,40),velocity=Vector3.new(4,0,0),snapshotTime=1,lifetime=lifetime}
+  local older={boidId=1,position=Vector3.new(20,40,40),velocity=Vector3.new(2,0,0),snapshotTime=0,lifetime=lifetime}
   local reordered=run(1,false,false,false,nil,{{newer},{older}})
   local expected=run(1,false,false,false,nil,{{older}})
   t.expect.equal(buffer.tostring(reordered.jobCells[1].pages.pages[1].data),buffer.tostring(expected.jobCells[1].pages.pages[1].data))
  end)
  -- An expired snapshot is inert and therefore has the same outcome as no correction.
  t.test("expired batched reconciliation target is inert",function()
-  local expired={boidId=1,position=Vector3.new(100,40,40),velocity=Vector3.new(4,0,0),snapshotTime=-10}
+  local expired={boidId=1,position=Vector3.new(100,40,40),velocity=Vector3.new(4,0,0),snapshotTime=-10,lifetime=lifetime}
   local actual=run(1,false,false,false,nil,{{expired}})
   local expected=run(1,false,false,false,nil,nil)
   t.expect.equal(buffer.tostring(actual.jobCells[1].pages.pages[1].data),buffer.tostring(expected.jobCells[1].pages.pages[1].data))

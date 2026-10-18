@@ -8,6 +8,8 @@ PackageBootstrap moves BoidsReplicated into ReplicatedStorage and BoidsClient in
 
 Boids is one process-local coordinator, configured explicitly before groups are created. Imports do not create pools, render roots, or background work. JobBuilder selects work, ActorsInitializer.JobExecution owns reservation/completion, and ResultCommit merges settled results. Cells owns cell lifetime; Scheduler remains cell-based. Timeout does not prove worker completion or permit premature Actor reuse.
 
+JobBuilder dispatches earliest-due cell work using free Actor capacity rather than simulation-kind boid quotas. Its DispatchPump shares a 1 ms coordinator allowance across Heartbeat, safe Actor release, and a single next-due timer. JobExecution notifies availability only after result settlement and physical reuse are safe. WorkerCore owns mutable scratch per invocation; cells within a job may reuse it, but jobs do not share scratch.
+
 ## Replication, rendering, and queries
 
 SimulationReplication owns authoritative lifecycle/group state and reliable bootstrap. NetworkResults preserves correction source time and direct local-buffer delivery. Corrections steer simulation, not direct renderer placement. The renderer turns toward its smoothed target and moves along facing without snapshot/orientation snaps.

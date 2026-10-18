@@ -37,15 +37,26 @@ export type ActorState = {
 	lastJobCompletion: number,
 	lastJobMs: number,
 	timeIdleStats: Benchmarkers.Benchmarker,
+	readyClock: number,
+	completedJobs: number,
+	processedBoids: number,
+	workerExecutionMs: number,
 	execution: Execution?,
 }
 local metrics = RuntimeMetrics.State
+local onActorReusable: ((ActorState) -> ())? = nil
+
+function JobExecution.SetOnActorReusable(callback: (ActorState) -> ()): ()
+	assert(onActorReusable == nil, "Actor reusable callback already installed")
+	onActorReusable = callback
+end
 
 function JobExecution.NewActor(instance: BaseScript, now: number): ActorState
 	return {
 		ready = true, targetJobWork = 10, instance = instance,
 		avgMsPerWorkUnit = 0.05, lastJobCompletion = now, lastJobMs = 50,
 		timeIdleStats = Benchmarkers.newBenchmarker(100), execution = nil,
+		readyClock = os.clock(), completedJobs = 0, processedBoids = 0, workerExecutionMs = 0,
 	}
 end
 
@@ -87,6 +98,8 @@ local function makeReusable(execution: Execution): ()
 		actor.execution = nil
 		actor.lastJobCompletion = workspace:GetServerTimeNow()
 		actor.ready = true
+		actor.readyClock = os.clock()
+		if onActorReusable then onActorReusable(actor) end
 	end
 end
 
@@ -151,11 +164,14 @@ local function receive(execution: Execution, result: Result?, inboundSeconds: nu
 	execution.isAccounted = true
 	RuntimeMetrics.Completed(metrics, result.measurement,
 		(resultStart - execution.dispatchClock) * 1000, (inboundSeconds or 0) * 1000, outboundMs)
+	local actor = execution.actor
+	actor.completedJobs += 1
+	actor.processedBoids += result.measurement.processedBoids
+	actor.workerExecutionMs += result.measurement.executionMs
 	-- Commit/observers may yield. Profile annotations cannot span a frame yield;
 	-- the inclusive elapsed resultHandlingMs measurement remains valid.
 	local ok, isComplete = pcall(callbacks.Commit, result, (inboundSeconds or 0) * 1000)
 	if ok and isComplete and not execution.cancelRequested then
-		local actor = execution.actor
 		local measuredMs = (result.completionTime - job.startTime) * 1000
 		local cost = measuredMs / job.estimatedCost
 		if cost ~= cost or cost <= 0 or cost == math.huge then
@@ -182,6 +198,7 @@ function JobExecution.Start(actor: ActorState, group: SharedTypes.Group, job: Jo
 	assert(actor.ready and actor.execution == nil, "Actor already has unfinished work")
 	local now = workspace:GetServerTimeNow()
 	actor.ready = false
+	RuntimeMetrics.Sample(metrics, "actorReadyDelayMs", (os.clock() - actor.readyClock) * 1000)
 	Benchmarkers.push(actor.timeIdleStats, now - actor.lastJobCompletion)
 	local execution: Execution = {
 		actor = actor, group = group, job = job, jobId = job.id,

@@ -251,7 +251,7 @@ export type WorkerMeasurement = {
 	inputBufferBytes: number,
 	outputBufferBytes: number,
 }
-export type RuntimeCounterName = "scheduledJobs" | "scheduledBoids" | "completedJobs" | "completedScheduledBoids" | "processedBoids" | "skippedBoids" | "survivingBoids" | "migratedBoids" | "observedBoids" | "returnedSourceBoids" | "countMismatches" | "timedOutJobs" | "discardedJobs" | "mergeFailures" | "outstandingJobs" | "peakOutstandingJobs" | "workerExecutionMs" | "workerSnapshotMs" | "jobBuildMs" | "dispatchMs" | "resultHandlingMs" | "mergeMs" | "observerPreparationMs" | "observerCallbacksMs" | "snapshotDeliveryMs" | "packetizationMs" | "schedulerMs" | "inboundDelayMs" | "outboundDelayMs" | "jobTurnaroundMs" | "detailedJobs" | "candidateExaminations" | "acceptedDirectInteractions" | "aggregateBucketVisits" | "acceptedAggregatePopulation" | "obstacleForwardRays" | "obstacleEscapeRays" | "obstacleDetourStarts" | "obstacleDetourUpdates" | "obstacleSoftFallbacks" | "pages" | "occupiedSlots" | "inputBufferBytes" | "outputBufferBytes" | "correctionMessages"
+export type RuntimeCounterName = "scheduledJobs" | "scheduledBoids" | "completedJobs" | "completedScheduledBoids" | "processedBoids" | "skippedBoids" | "survivingBoids" | "migratedBoids" | "observedBoids" | "returnedSourceBoids" | "countMismatches" | "timedOutJobs" | "discardedJobs" | "mergeFailures" | "outstandingJobs" | "peakOutstandingJobs" | "workerExecutionMs" | "workerSnapshotMs" | "jobBuildMs" | "dispatchMs" | "resultHandlingMs" | "mergeMs" | "observerPreparationMs" | "observerCallbacksMs" | "snapshotDeliveryMs" | "packetizationMs" | "schedulerMs" | "inboundDelayMs" | "outboundDelayMs" | "jobTurnaroundMs" | "detailedJobs" | "candidateExaminations" | "acceptedDirectInteractions" | "aggregateBucketVisits" | "acceptedAggregatePopulation" | "obstacleForwardRays" | "obstacleEscapeRays" | "obstacleDetourStarts" | "obstacleDetourUpdates" | "obstacleSoftFallbacks" | "pages" | "occupiedSlots" | "inputBufferBytes" | "outputBufferBytes" | "correctionMessages" | "dispatchPumps" | "dispatchPumpMs" | "heartbeatDispatches" | "completionDispatches" | "timerDispatches" | "dispatchBudgetStops" | "dispatchNoActorStops" | "dispatchNoDueStops"
 export type LatencySummary = {
 	sampleCount: number,
 	totalSamples: number,
@@ -372,10 +372,14 @@ export type GroupDiagnostics = {
 	inboundMs: NumericStatsSummary, outboundMs: NumericStatsSummary,
 	cellsPerSecond: NumericStatsSummary, boidsPerSecond: NumericStatsSummary,
 }
+export type ActorDiagnostics = {
+	index: number, idleSeconds: NumericStatsSummary,
+	completedJobs: number, processedBoids: number, workerExecutionMs: number,
+}
 export type RuntimeDiagnostics = {
 	sampledAt: number, summary: RuntimeSummary,
 	cells: {total: number, valid: number, scheduled: number, maxPopulation: number, oldestAge: number, oldestId: number},
-	groups: {GroupDiagnostics}, actors: {{index: number, idleSeconds: NumericStatsSummary}},
+	groups: {GroupDiagnostics}, actors: {ActorDiagnostics},
 }
 
 return SharedTypes

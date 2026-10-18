@@ -20,6 +20,7 @@ type RuntimeMetrics = SharedTypes.RuntimeMetrics
 type BoidsApi = {
 	GetRuntimeMetrics: (sinceTotals: {[string]: number}?) -> RuntimeMetrics,
 	GetRuntimeSummary: () -> SharedTypes.RuntimeSummary,
+	GetRuntimeDiagnostics: () -> SharedTypes.RuntimeDiagnostics,
 }
 
 type Divergence = {
@@ -45,6 +46,8 @@ type Report = {
 	elapsedRates: {[string]: number},
 	counterDeltas: {[SharedTypes.RuntimeCounterName]: number},
 	latency: {[string]: SharedTypes.LatencySummary},
+	actors: {{index: number, completedJobs: number, processedBoids: number, workerExecutionMs: number}},
+	cellsAtEnd: {total: number, valid: number, scheduled: number, maxPopulation: number, oldestAge: number, oldestId: number},
 	metadata: {[string]: string | number | boolean},
 	outstandingJobs: number,
 	peakOutstandingJobs: number,
@@ -149,6 +152,7 @@ function PerformanceTelemetry.Start(
 		task.wait(warmupSeconds)
 
 		local startMetrics = boids.GetRuntimeMetrics()
+		local startDiagnostics = boids.GetRuntimeDiagnostics()
 		local startTransportMetrics = TransportMetrics.Read()
 		local memorySamples: {number} = {}
 		local sendSamples: {number} = {}
@@ -224,6 +228,16 @@ function PerformanceTelemetry.Start(
 			end
 		end
 		local summary = boids.GetRuntimeSummary()
+		local endDiagnostics = boids.GetRuntimeDiagnostics()
+		local actors: {{index: number, completedJobs: number, processedBoids: number, workerExecutionMs: number}} = {}
+		for index, actor in endDiagnostics.actors do
+			local before = startDiagnostics.actors[index]
+			table.insert(actors, {
+				index = actor.index, completedJobs = actor.completedJobs - before.completedJobs,
+				processedBoids = actor.processedBoids - before.processedBoids,
+				workerExecutionMs = actor.workerExecutionMs - before.workerExecutionMs,
+			})
+		end
 		local metadata: {[string]: string | number | boolean} = {
 			actorCount = summary.actorCount, groupCount = summary.groupCount,
 			populationAtEnd = summary.population, lodPreset = LODConfig.GetPresetName(),
@@ -250,6 +264,7 @@ function PerformanceTelemetry.Start(
 			elapsedRates = elapsedRates,
 			counterDeltas = counterDeltas,
 			latency = endMetrics.latency,
+			actors = actors, cellsAtEnd = endDiagnostics.cells,
 			metadata = metadata,
 			outstandingJobs = endMetrics.counters.outstandingJobs,
 			peakOutstandingJobs = endMetrics.counters.peakOutstandingJobs,

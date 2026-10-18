@@ -33,7 +33,7 @@ return function(t: any): ()
 				buffer.writeu8(batch, offset + 10, spec.cohesion or 0)
 				buffer.writeu8(batch, offset + 11, spec.targetBias or 0)
 			end
-			handlers.NewBoidsStatsBatch({ boidCount = count, data = batch })
+			handlers.NewBoidsStatsBatch({ boidCount = count, data = batch, lifetimes = table.create(count, 1) })
 			local pages: {any} = {}
 			for start = 1, count, 64 do
 				local size = math.min(64, count - start + 1)

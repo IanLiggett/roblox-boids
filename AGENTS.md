@@ -6,7 +6,7 @@ This repository must work without a private host game. Human documentation start
 
 Read [architecture](docs/architecture.md) and [style](agent-docs/style.md) before edits. Simulation/startup/configuration/queries/replication require [runtime contracts](agent-docs/runtime.md) and [Boids lessons](agent-docs/lessons-boids.md). Rendering/observation also require [rendering contracts](agent-docs/rendering.md), [observer contracts](agent-docs/observation.md), and [rendering lessons](agent-docs/lessons-rendering.md). Search relevant lessons by subsystem/symbol.
 
-Instrumentation/reporting changes also require [measurement contracts](agent-docs/metrics.md). Current obstacle continuation uses threshold 0 while the positive-margin lesson remains a possible regression requiring separate owner review; do not silently resolve that discrepancy during unrelated work.
+Instrumentation/reporting changes also require [measurement contracts](agent-docs/metrics.md).
 
 ## Invariants and precedence
 

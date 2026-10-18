@@ -5,10 +5,10 @@ export type Snapshot = {sentPackets: number, sentPayloadBytes: number}
 local sentPackets = 0
 local sentPayloadBytes = 0
 function TransportMetrics.RecordSent(payloadBytes: number): ()
- sentPackets += 1
- sentPayloadBytes += payloadBytes
+    sentPackets += 1
+    sentPayloadBytes += payloadBytes
 end
 function TransportMetrics.Read(): Snapshot
- return {sentPackets=sentPackets,sentPayloadBytes=sentPayloadBytes}
+    return {sentPackets=sentPackets,sentPayloadBytes=sentPayloadBytes}
 end
 return TransportMetrics

@@ -12,7 +12,6 @@ type BoidPacket = SharedTypes.BoidPacket
 type CellSnapshot = SharedTypes.CellSnapshot
 local dequantizePositionAxis = Quantization.dequantizePositionAxis
 local dequantizeVelocityAxis = Quantization.dequantizeVelocityAxis
-local CELL_SIZE: number = Quantization.CELL_SIZE
 
 local U8_SIZE: number = 1
 local U16_SIZE: number = 2

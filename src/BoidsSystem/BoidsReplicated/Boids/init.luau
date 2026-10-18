@@ -94,7 +94,6 @@ local nextGravityWellId = 0
 
 
 -- Retained as a compatibility value; JobBuilder applies the per-group budget.
-Boids.MAX_BOIDS_PER_FRAME = LODConfig.GetSimulationConfig(if RunService:IsClient() then "clientLocal" else "server").maxBoidsPerFrame
 
 local ACTORS_COUNT = 8
 local DEFAULT_PATH_ARRIVAL_RADIUS = 48
@@ -181,11 +180,7 @@ local function resolvePathNode(node: PathNode): Vector3
 end
 
 function Boids.SetLODPreset(preset: LODPresetName): boolean
-	local changed = LODConfig.SetPreset(preset)
-	if changed then
-		Boids.MAX_BOIDS_PER_FRAME = LODConfig.GetSimulationConfig(if RunService:IsClient() then "clientLocal" else "server").maxBoidsPerFrame
-	end
-	return changed
+	return LODConfig.SetPreset(preset)
 end
 
 -- These trusted configuration APIs do not send remotes or alter rendering.
@@ -844,7 +839,6 @@ function Boids.Start(options: RuntimeConfig.Options?): ()
 	if isStarted then return end
 	local config = RuntimeConfig.Resolve(options)
 	isStarted = true
-	Boids.MAX_BOIDS_PER_FRAME = LODConfig.GetSimulationConfig(if RunService:IsClient() then "clientLocal" else "server").maxBoidsPerFrame
 	ActorsInitializer.InitializeBoidActors(config.actorCount)
 	SimulationReplication.SetServerStateReader(function(boidId: number): (Vector3?, Vector3?)
 		if Boids.IsDeletionPending(boidId) then return nil, nil end

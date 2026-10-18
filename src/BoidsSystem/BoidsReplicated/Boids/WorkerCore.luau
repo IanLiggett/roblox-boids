@@ -161,28 +161,7 @@ local function acceptGroupLifetime(groupId: number, lifetime: number): boolean
 	return true
 end
 
--- Actors handle one ready job at a time, so this scratch space can be reused
--- across cells and jobs without allocation or cross-job state.
-local cellScratch: CellScratch = {
-	ids = {},
-	positions = {},
-	velocities = {},
-	lastTicks = {},
-	pathNodes = {},
-	pathVersions = {},
-	pagesByIndex = {},
-	slotsByIndex = {},
-	bucketXs = {},
-	bucketYs = {},
-	bucketZs = {},
-	liveIndices = {},
-}
-
--- Actor-lifetime bucket scratch: active records are reset before being reused.
-local bucketRecordPool: {Bucket} = {}
-local activeBucketRecords: {Bucket} = {}
-
-local function clearBuckets(buckets: {[number]: Bucket}): ()
+local function clearBuckets(buckets: {[number]: Bucket}, activeBucketRecords: {Bucket}, bucketRecordPool: {Bucket}): ()
 	for i = 1, #activeBucketRecords do
 		local bucket = activeBucketRecords[i]
 		table.clear(bucket.liveIndices)
@@ -193,7 +172,7 @@ local function clearBuckets(buckets: {[number]: Bucket}): ()
 	table.clear(buckets)
 end
 
-local function acquireBucket(liveIndex: number, position: Vector3, velocity: Vector3): Bucket
+local function acquireBucket(liveIndex: number, position: Vector3, velocity: Vector3, activeBucketRecords: {Bucket}, bucketRecordPool: {Bucket}): Bucket
 	local bucket = bucketRecordPool[#bucketRecordPool]
 	if bucket then
 		bucketRecordPool[#bucketRecordPool] = nil
@@ -302,7 +281,7 @@ local OBSTACLE_LOOK_AHEAD_PADDING = 4
 local OBSTACLE_MAX_LOOK_AHEAD = 1024
 local OBSTACLE_CLEARANCE_MARGIN = 2
 -- The margin avoids treating packed-heading quantization noise as forward alignment.
-local OBSTACLE_CONTINUATION_DOT_THRESHOLD = 0 --0.1
+local OBSTACLE_CONTINUATION_DOT_THRESHOLD = 0.1
 local OBSTACLE_SOFT_ACCELERATION_SCALE = 0.75
 
 local obstacleRaycastParams = RaycastParams.new()
@@ -607,6 +586,13 @@ end
 local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number, messageSentTime: number): ()
 	local executionStart = os.clock()
 	local jobReceiveTime = workspace:GetServerTimeNow() - messageSentTime
+	-- Scratch belongs to this invocation; only cells in this job reuse it.
+	local cellScratch: CellScratch = {
+		ids = {}, positions = {}, velocities = {}, lastTicks = {}, pathNodes = {}, pathVersions = {},
+		pagesByIndex = {}, slotsByIndex = {}, bucketXs = {}, bucketYs = {}, bucketZs = {}, liveIndices = {},
+	}
+	local bucketRecordPool: {Bucket} = {}
+	local activeBucketRecords: {Bucket} = {}
 	local detailedMetrics = job.detailedMetrics
 	local obstacleRequest = job.obstacleRequest
 	local observedBoidId = if obstacleRequest then obstacleRequest.boidId else nil
@@ -743,7 +729,7 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 		isBucketting = jobCell.boidCount > MAX_SEEN
 		
 		if isBucketting then
-			clearBuckets(buckets)
+			clearBuckets(buckets, activeBucketRecords, bucketRecordPool)
 		end
 		
 		cellBoidCount = jobCell.boidCount
@@ -849,7 +835,7 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 
 					bucket = buckets[bucketKey]
 					if not bucket then
-							bucket = acquireBucket(nextLiveIndex, position, velocity)
+							bucket = acquireBucket(nextLiveIndex, position, velocity, activeBucketRecords, bucketRecordPool)
 						buckets[bucketKey] = bucket
 
 						continue
