@@ -42,6 +42,6 @@ Host launchers call server `Server.Testing.ScenarioTestInitializer.Start(serverH
 
 ## Tests and status
 
-The standalone project maps `ServerStorage.UnitTest`. Before Play, generate its WorkerCore fixture using `UnitTest.PrepareWorkerFixture` from a privileged Studio Edit tool. During Play, run `require(game.ServerStorage.UnitTest.RunUnitTest)()` in the server context. Never start another coordinator from an inspection VM to read live state. A Rojo build is not a complete type check.
+The standalone project maps `ServerStorage.UnitTest`. Before Play, generate its production-code fixtures using `UnitTest.PrepareWorkerFixture` and `UnitTest.PrepareSchedulerFixture` from a privileged Studio Edit tool. During Play, run `require(game.ServerStorage.UnitTest.RunUnitTest)()` in the server context. Never start another coordinator from an inspection VM to read live state. A Rojo build is not a complete type check.
 
 Benchmarker and BinaryHeaps are pinned source copies under vendor, including original metadata. Redistribution rights and a package license need review before public publication; local extraction grants no new license.

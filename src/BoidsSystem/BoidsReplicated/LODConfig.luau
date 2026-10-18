@@ -42,7 +42,6 @@ export type SimulationConfig = {
 	minIntervalMultiplier: number,
 	maxIntervalMultiplier: number,
 	backgroundIntervalMultiplier: number,
-	maxBoidsPerFrame: number,
 }
 
 -- Server-owned boids, replicated client prediction, and client-local boids
@@ -93,7 +92,6 @@ local presets: {[PresetName]: Config} = {
 			minIntervalMultiplier = 1,
 			maxIntervalMultiplier = 4,
 			backgroundIntervalMultiplier = 4,
-			maxBoidsPerFrame = 666,
 		},
 		-- Tune predictive work against correction bandwidth independently.
 		clientPredictionSimulation = {
@@ -102,7 +100,6 @@ local presets: {[PresetName]: Config} = {
 			minIntervalMultiplier = 1,
 			maxIntervalMultiplier = 4,
 			backgroundIntervalMultiplier = 12,
-			maxBoidsPerFrame = 666,
 		},
 		-- Local-only scenarios never compete with prediction tuning.
 		clientLocalSimulation = {
@@ -111,7 +108,6 @@ local presets: {[PresetName]: Config} = {
 			minIntervalMultiplier = 1,
 			maxIntervalMultiplier = 4,
 			backgroundIntervalMultiplier = 4,
-			maxBoidsPerFrame = 666,
 		},
 		network = {
 			baseInterval = 2,
@@ -142,7 +138,6 @@ local presets: {[PresetName]: Config} = {
 			minIntervalMultiplier = 1,
 			maxIntervalMultiplier = 3,
 			backgroundIntervalMultiplier = 3,
-			maxBoidsPerFrame = 480,
 		},
 		clientPredictionSimulation = {
 			nearDistance = 0,
@@ -150,7 +145,6 @@ local presets: {[PresetName]: Config} = {
 			minIntervalMultiplier = 1,
 			maxIntervalMultiplier = 3,
 			backgroundIntervalMultiplier = 3,
-			maxBoidsPerFrame = 480,
 		},
 		clientLocalSimulation = {
 			nearDistance = 0,
@@ -158,7 +152,6 @@ local presets: {[PresetName]: Config} = {
 			minIntervalMultiplier = 1,
 			maxIntervalMultiplier = 3,
 			backgroundIntervalMultiplier = 3,
-			maxBoidsPerFrame = 480,
 		},
 		network = {
 			baseInterval = 2,
@@ -189,7 +182,6 @@ local presets: {[PresetName]: Config} = {
 			minIntervalMultiplier = 1,
 			maxIntervalMultiplier = 2,
 			backgroundIntervalMultiplier = 2,
-			maxBoidsPerFrame = 320,
 		},
 		clientPredictionSimulation = {
 			nearDistance = 0,
@@ -197,7 +189,6 @@ local presets: {[PresetName]: Config} = {
 			minIntervalMultiplier = 1,
 			maxIntervalMultiplier = 2,
 			backgroundIntervalMultiplier = 2,
-			maxBoidsPerFrame = 320,
 		},
 		clientLocalSimulation = {
 			nearDistance = 0,
@@ -205,7 +196,6 @@ local presets: {[PresetName]: Config} = {
 			minIntervalMultiplier = 1,
 			maxIntervalMultiplier = 2,
 			backgroundIntervalMultiplier = 2,
-			maxBoidsPerFrame = 320,
 		},
 		network = {
 			baseInterval = 2,

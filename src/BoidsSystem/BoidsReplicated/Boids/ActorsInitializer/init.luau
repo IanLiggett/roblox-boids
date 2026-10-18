@@ -12,6 +12,7 @@ export type JobCallbacks = JobExecution.Callbacks
 export type JobOutcome = JobExecution.Outcome
 local actors: {ActorState} = {}
 ActorsInitializer.actors = actors
+ActorsInitializer.SetOnActorReusable = JobExecution.SetOnActorReusable
 
 function ActorsInitializer.InitializeBoidActors(actorCount: number): ()
 	assert(#actors == 0, "Boid Actors already initialized")

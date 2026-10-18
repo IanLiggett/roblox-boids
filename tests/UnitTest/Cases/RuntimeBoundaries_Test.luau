@@ -17,7 +17,7 @@ return function(t: any): ()
 				[2]={entity={id=2,boidCount=2},alreadyScheduled=true,lastUpdated=workspace:GetServerTimeNow()-1},
 			}},
 		}
-		return {[17]=group}, {{timeIdleStats=stats}}
+		return {[17]=group}, {{timeIdleStats=stats,completedJobs=2,processedBoids=6,workerExecutionMs=12}}
 	end
 
 	t.test("diagnostic reads copy nested data and preserve group/cell ownership", function()

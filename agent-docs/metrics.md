@@ -89,8 +89,21 @@ Clock and phase definitions (milliseconds)
   It is NOT CPU utilization or worker execution.
 - jobBuildMs: job construction inclusive.
 - dispatchMs: SendMessage call elapsed, not time waiting for completion.
-- schedulerMs: Heartbeat assignment/maintenance inclusive; includes jobBuildMs and
-  dispatchMs. Do not add those child times to schedulerMs.
+- schedulerMs: Heartbeat maintenance plus every deferred dispatch pump, counted
+  once. Includes dispatchPumpMs, jobBuildMs and dispatchMs; do not add child times.
+- dispatchPumpMs: selection, building, and dispatch across all wakeup sources.
+  The shared 1 ms epoch allowance excludes serial merge and result handling.
+- dispatchPumps and dispatchBudgetStops/dispatchNoActorStops/dispatchNoDueStops:
+  cumulative pump/stop counts. heartbeatDispatches/completionDispatches/timerDispatches
+  count dispatched jobs by the coalesced request that drove the pump, not OS tasks.
+- actorReadyDelayMs: ready-to-next-dispatch latency, including startup and
+  intentional no-due/budget waits. Interpret with stop counters, never as pure
+  avoidable idle time. cellOverdueMs samples the selected group's oldest due
+  deadline at dispatch, not every cell or a time-weighted backlog integral.
+- Per-Actor completedJobs/processedBoids/workerExecutionMs follow the same accepted
+  current-reply accounting as aggregate completed worker counters. Diagnostics
+  return cumulative copies; scenario reports include per-window deltas and an
+  end-of-window cell summary. These are not per-core measurements or CPU usage.
 - resultHandlingMs: current result processing/retirement inclusive. Contains
   snapshotDeliveryMs, mergeMs, observerPreparationMs, observerCallbacksMs and
   rescheduling/control overhead. This is elapsed time, including yielded
@@ -120,7 +133,7 @@ this contract is an OS CPU percentage. Profiling and end-to-end coverage remain
 necessary; lower accumulated worker time can also mean less work completed.
 
 Latency and report windows
-Each of five series retains at most 512 values. A monotonically increasing sequence
+Each latency series retains at most 512 values. A monotonically increasing sequence
 identifies events; report start watermarks exclude warmup samples. Reports expose
 totalSamples, windowSamples, retained sampleCount, droppedSamples, and nearest-rank
 p50/p95/p99/maximum. Quantiles are of the RETAINED SUFFIX, not an unbiased full-window
@@ -137,6 +150,7 @@ Validation
 The test suite lives under ServerStorage.UnitTest; UnitTestRunner is disabled.
 To refresh the generated fixture in Edit mode:
   require(game.ServerStorage.UnitTest.PrepareWorkerFixture)()
+  require(game.ServerStorage.UnitTest.PrepareSchedulerFixture)()
 Then start Play and run:
   require(game.ServerStorage.UnitTest.RunUnitTest)(nil, 5)
 Keep UnitTestRunner disabled when invoking tests manually, to avoid duplicate runs.

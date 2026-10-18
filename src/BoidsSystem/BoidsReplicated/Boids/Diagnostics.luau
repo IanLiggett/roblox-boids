@@ -39,7 +39,11 @@ function Diagnostics.Read(
 		groups = {}, actors = {},
 	}
 	for index, actor in actors do
-		table.insert(result.actors, {index = index, idleSeconds = copyStats(actor.timeIdleStats)})
+		table.insert(result.actors, {
+			index = index, idleSeconds = copyStats(actor.timeIdleStats),
+			completedJobs = actor.completedJobs, processedBoids = actor.processedBoids,
+			workerExecutionMs = actor.workerExecutionMs,
+		})
 	end
 	for _, group in groups do
 		for _, cellSchedulee in group.scheduler.schedulees do

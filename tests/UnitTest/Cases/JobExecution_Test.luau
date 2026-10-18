@@ -1,7 +1,16 @@
 --!strict
 return function(t: any): ()
 	local package = game.ReplicatedStorage:WaitForChild("BoidsReplicated")
-	local execution = require(package.Boids.ActorsInitializer.JobExecution)
+	local executionFixture = package.Boids.ActorsInitializer.JobExecution:Clone()
+	executionFixture.Name = "JobExecutionUnitFixture"
+	executionFixture.Parent = package.Boids.ActorsInitializer
+	local execution = require(executionFixture)
+	local reusableCounts: {[any]: number} = {}
+	execution.SetOnActorReusable(function(actor: any): ()
+		t.expect.truthy(actor.ready)
+		t.expect.equal(actor.execution,nil)
+		reusableCounts[actor]=(reusableCounts[actor] or 0)+1
+	end)
 	local metrics = require(package.RuntimeMetrics).State
 	local nextId = -100
 	local function fixture(mode: string?): any
@@ -197,4 +206,19 @@ return function(t: any): ()
 		t.expect.equal(f.outcome,"cancelled");t.expect.equal(f.retires,1)
 		t.expect.truthy(f.actor.ready);f.cleanup()
 	end)
+	t.test("reusable notification follows physical release, never logical timeout",function()
+		local f=fixture()
+		execution.Expire(f.record)
+		t.expect.equal(reusableCounts[f.actor],nil)
+		f.finish()
+		t.expect.equal(reusableCounts[f.actor],1)
+		f.cleanup()
+		local yielded=fixture("yield")
+		yielded.reply:Fire(yielded.result(),0);task.wait()
+		t.expect.equal(reusableCounts[yielded.actor],nil)
+		yielded.gate:Fire();task.wait()
+		t.expect.equal(reusableCounts[yielded.actor],1)
+		yielded.cleanup()
+	end)
+	executionFixture:Destroy()
 end
