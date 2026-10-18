@@ -1,9 +1,11 @@
 --!strict
 -- Trusted process configuration; no scenario names, test attributes or runtime work.
+local RunService = game:GetService("RunService")
+
 local RuntimeConfig = {}
 export type Options = {actorCount: number?, targetActorJobMs: number?}
 export type Resolved = {actorCount: number, targetActorJobMs: number}
-RuntimeConfig.Defaults = table.freeze({actorCount = 2, targetActorJobMs = 4})
+RuntimeConfig.Defaults = table.freeze({actorCount = if RunService:IsClient() then 16 else 2, targetActorJobMs = 4})
 
 function RuntimeConfig.Resolve(options: Options?): Resolved
 	local actorCount = if options and options.actorCount ~= nil then options.actorCount else RuntimeConfig.Defaults.actorCount

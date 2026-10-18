@@ -31,13 +31,13 @@ local DEFAULT_TUNING = {
 	maxSpeed = 20,--20,
 	minSpeed = 3,--3,
 	sight = 60,--32,
-	avoidance = 35, --35,
+	avoidance = 30, --35,
 	separation = 200, --100,
 	repulsion = 0,
 	repulsionStrength = 3,
 	alignment = 100,
-	cohesion = 10,
-	targetBias = 50,
+	cohesion = 100,
+	targetBias = 10,
 }
 
 local POLAR_SPHERE_CENTER = Vector3.new(150, 0, 0)
@@ -401,7 +401,7 @@ Catalog.NewScenario(
 		for index, target in targets do
 			groups[index] = {
 				name = "RandomTargetGroup_" .. index,
-				boidCount = 2000, center = target.Position, spread = 40,
+				boidCount = 4000, center = target.Position, spread = 40,
 				seed = 20000 + index, color = target.Color,
 				tuning = DEFAULT_TUNING, target = target,
 			}
@@ -484,7 +484,7 @@ Catalog.NewScenario(
 	function(_player: Player)
 		Fixtures.CreatePolarSphere()
 		local crossingPath = makePolarCrossingPath()
-		local figureEightPath = makePolarFigureEightPath()
+		-- local figureEightPath = makePolarFigureEightPath()
 
 		return {
 			{
