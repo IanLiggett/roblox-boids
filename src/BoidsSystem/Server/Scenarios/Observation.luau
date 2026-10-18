@@ -237,7 +237,7 @@ local function dispatchCommand(player: Player, session: Session, request: {[stri
 	elseif request.action == "SelectBoid" then
 		if not isInteger(request.selectionRevision, 1, 2^31 - 1)
 			or (request.selectionRevision :: number) <= session.selectionRevision
-			or (request.boidId ~= nil and not isInteger(request.boidId, 0, 32767)) then
+			or (request.boidId ~= nil and not isInteger(request.boidId, 0, 65535)) then
 			sendState(player, "Invalid or stale selection")
 			return
 		end

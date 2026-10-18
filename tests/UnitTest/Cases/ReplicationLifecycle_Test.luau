@@ -17,7 +17,7 @@ return function(t: any): ()
 		local live, deleting = true, false
 		local received: {any} = {}
 		local intake = intakeModule.New({
-			HasBoid = function(): boolean return live end,
+			IsServerBoid = function(): boolean return live end,
 			IsDeletionPending = function(): boolean return deleting end,
 			SetReconciliationTargets = function(rows: {any}): () for _, row in rows do table.insert(received, row) end end,
 		})
@@ -57,11 +57,31 @@ return function(t: any): ()
 		network.AppendBoid(cell, 7, Vector3.one, Vector3.zero)
 		network.AppendBoid(cell, 7, Vector3.one * 2, Vector3.zero)
 		local intake = intakeModule.New({
-			HasBoid = function(): boolean return true end,
+			IsServerBoid = function(): boolean return true end,
 			IsDeletionPending = function(): boolean return false end,
 			SetReconciliationTargets = function(rows: {any}): () calls += #rows end,
 		})
 		intake.Consume(network.ConvertSimulationSnapshotToPackets({cell})[1], 1)
+		t.expect.equal(calls, 1)
+	end)
+
+	t.test("client-local ownership rejects corrections across the full u16 range", function()
+		local isServer = false
+		local calls = 0
+		local intake = intakeModule.New({
+			IsServerBoid = function(): boolean return isServer end,
+			IsDeletionPending = function(): boolean return false end,
+			SetReconciliationTargets = function(rows: {any}): () calls += #rows end,
+		})
+		intake.Consume(packet(0), 1)
+		intake.Consume(packet(65535), 1)
+		t.expect.equal(calls, 0)
+		isServer = true
+		intake.Consume(packet(65535), 2)
+		t.expect.equal(calls, 1)
+		intake.Retire(65535, 3)
+		isServer = false
+		intake.Consume(packet(65535), 4)
 		t.expect.equal(calls, 1)
 	end)
 

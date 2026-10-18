@@ -42,6 +42,7 @@ local RuntimeConfig = require(BoidsReplicated.RuntimeConfig)
 local ActorsInitializer = require(script.ActorsInitializer)
 local Diagnostics = require(script.Diagnostics)
 local Cells = require(script.Cells)
+local IdAllocator = require(script.IdAllocator)
 local ResultCommit = require(script.ResultCommit)
 
 local Dependencies = BoidsReplicated.Dependencies
@@ -82,8 +83,7 @@ local groupPositionSources: {[number]: {path: {PathNode}?, target: Target?}} = {
 local globalGravityWells: {[number]: GravityWell} = {}
 local groupGravityWells: {[number]: {[number]: GravityWell}} = {}
 
--- Server and client simulations use disjoint id ranges so both can feed one
--- renderer without overwriting each other's group or boid state.
+-- Group IDs remain partitioned; individual boid IDs share the full u16 space.
 local ID_PARTITION_SIZE = 2^15
 local isClientSimulation = RunService:IsClient()
 local nextGroupId = if isClientSimulation then ID_PARTITION_SIZE else 0
@@ -396,42 +396,47 @@ function Boids.DestroyGroup(group: Group): ()
 end
 
 
-local BOID_ID_COUNT = ID_PARTITION_SIZE
-local BOID_ID_FIRST = if isClientSimulation then ID_PARTITION_SIZE else 0
+local freeBoidIds: IdAllocator.Allocator = IdAllocator.New()
+local serverBoidIds: buffer = buffer.create(8192)
+-- Each queued/pending spawn holds a reservation, including duplicate replay rows.
+local serverReservations: {[number]: number} = {}
 
-local freeBoidIds: buffer = buffer.create(BOID_ID_COUNT * U16_SIZE)
-for i = 0, BOID_ID_COUNT - 1 do
-	buffer.writeu16(freeBoidIds, i * U16_SIZE, BOID_ID_FIRST + i)
+local function setServerOwned(id: number, isOwned: boolean): ()
+	local offset = math.floor(id / 8)
+	local mask = bit32.lshift(1, id % 8)
+	local previous = buffer.readu8(serverBoidIds, offset)
+	buffer.writeu8(serverBoidIds, offset, if isOwned then bit32.bor(previous, mask) else bit32.band(previous, bit32.bnot(mask)))
 end
-local nextFreeIndex = 0
--- Explicit ids are reserved for the server replica on a client. They occupy the
--- server id partition, so they never consume the locally-generated id pool.
-local generatedBoidIds: {[number]: boolean} = {}
+
+function Boids.ReserveServerBoidId(id: number): ()
+	assert(isClientSimulation and id >= 0 and id < 2^16 and id % 1 == 0, "Expected client server-ID reservation")
+	serverReservations[id] = (serverReservations[id] or 0) + 1
+	IdAllocator.Reserve(freeBoidIds, id)
+end
+
+function Boids.ReleaseServerBoidId(id: number): ()
+	local count = assert(serverReservations[id], "Missing server-ID reservation")
+	serverReservations[id] = if count > 1 then count - 1 else nil
+	if count == 1 and not boidLifetimes[id] then IdAllocator.Release(freeBoidIds, id) end
+end
 
 local function claimBoidId(explicitId: number?): number?
 	if explicitId ~= nil then
 		assert(explicitId >= 0 and explicitId < 2^16 and explicitId % 1 == 0, "Boid id must be a u16 integer")
 		assert(not boidLifetimes[explicitId], `Boid {explicitId} is live or still settling deletion`)
+		IdAllocator.Reserve(freeBoidIds, explicitId)
+		setServerOwned(explicitId, true)
 		return explicitId
 	end
 
-	if nextFreeIndex / U16_SIZE >= BOID_ID_COUNT then
-		return nil
-	end
-	
-	local id:number = buffer.readu16(freeBoidIds, nextFreeIndex)
-	nextFreeIndex += U16_SIZE
-	generatedBoidIds[id] = true
+	local id = IdAllocator.Take(freeBoidIds, isClientSimulation)
+	if id ~= nil and not isClientSimulation then setServerOwned(id, true) end
 	return id
 end
 
 local function returnBoidId(id:number)
-	if not generatedBoidIds[id] then
-		return
-	end
-	generatedBoidIds[id] = nil
-	buffer.writeu16(freeBoidIds, nextFreeIndex - U16_SIZE, id)
-	nextFreeIndex -= U16_SIZE
+	setServerOwned(id, false)
+	if not serverReservations[id] then IdAllocator.Release(freeBoidIds, id) end
 end
 
 function Boids.NewBoid(
@@ -751,6 +756,13 @@ function Boids.HasBoid(boidId: number): boolean
 	return boidGroupById[boidId] ~= nil
 end
 
+function Boids.IsServerBoid(boidId: number): boolean
+	local group = boidGroupById[boidId]
+	return group ~= nil and groups[group.id] == group
+		and bit32.band(buffer.readu8(serverBoidIds, math.floor(boidId / 8)), bit32.lshift(1, boidId % 8)) ~= 0
+		and not Boids.IsDeletionPending(boidId)
+end
+
 function Boids.GetBoidModel(boidId: number): BoidModel?
 	return boidModelById[boidId]
 end
@@ -780,7 +792,7 @@ function broadcastDeletedBoids(boidIds: {number})
 	end
 	local startIndex = 1
 	while startIndex <= #boidIds do
-		local count = math.min(#boidIds - startIndex + 1, BOID_ID_COUNT)
+		local count = math.min(#boidIds - startIndex + 1, 65535)
 		local packet = buffer.create(U16_SIZE + count * U16_SIZE)
 		buffer.writeu16(packet, 0, count)
 
@@ -789,7 +801,7 @@ function broadcastDeletedBoids(boidIds: {number})
 		end
 
 		if RunService:IsServer() then
-			SimulationReplication.ServerDeleteBoids(boidIds)
+			if startIndex == 1 then SimulationReplication.ServerDeleteBoids(boidIds) end
 		else
 			ClientRendererBridge.ReceiveDeleteBoidBatch(packet, lifetimes)
 		end
