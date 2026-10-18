@@ -1,0 +1,18 @@
+{
+  "name": "BoidsSystemInstall",
+  "tree": {
+    "$className": "Model",
+    "BoidsSystem": {
+      "$path": "src/BoidsSystem"
+    },
+    "ExternalLibraries": {
+      "$className": "Folder",
+      "BinaryHeaps": {
+        "$path": "vendor/ExternalLibraries/BinaryHeaps"
+      },
+      "Benchmarker": {
+        "$path": "vendor/ExternalLibraries/Benchmarker"
+      }
+    }
+  }
+}

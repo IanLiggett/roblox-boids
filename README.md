@@ -1,6 +1,18 @@
 # BoidsSystem
 
-A reusable Roblox boid simulation package with shared server/client simulation, rendering/reconciliation, package-owned queries, replication, and developer Scenarios/observation. Host games own combat and control policy. Read the short [architecture](docs/architecture.md) for boundaries; [AGENTS](AGENTS.md) is for development work, not onboarding.
+A reusable Roblox boid simulation package with shared server/client simulation, rendering/reconciliation, package-owned queries, replication, and developer Scenarios/observation. Read the short [architecture](docs/architecture.md) for boundaries; [AGENTS](AGENTS.md) is for development work, not onboarding.
+
+## Use without Rojo
+
+When published, the `.rbxm` attached to a [versioned release](https://github.com/IanLiggett/roblox-boids/releases) is the ready-to-insert package model. In Studio, insert it from file under **ServerScriptService**. Its bootstrap places the client and replicated folders in their runtime services. Then start the server coordinator from a server Script; see the [API overview](docs/api.md) for the minimal startup and how to create your own boids. You do not need the Rojo plugin or CLI to install a release model.
+
+The JSON sourcemap is for editor tooling; it is not an installable Roblox package. A maintainer builds the release model from `install.project.json` with Rojo 7.7.1:
+
+```powershell
+.\build-package.cmd
+```
+
+The script uses the repo-pinned Rojo executable when this package is inside the game workspace, or `rojo` from `PATH` in a standalone checkout.
 
 ## Try a Scenario
 
@@ -18,7 +30,9 @@ Select a Scenario using `ActiveBoidsScenario` in [shared metadata](src/BoidsSyst
 
 For examples, read the [Scenario catalog](src/BoidsSystem/Server/Scenarios/Registry/Catalog/init.luau) and [fixtures](src/BoidsSystem/Server/Scenarios/Registry/Catalog/Fixtures.luau). They own the paths, groups, fields, and generated world resources; this README does not duplicate their settings.
 
-## Use in a game
+The included Scenarios are mainly test and development harnesses. Games can create and manage their own boid groups directly through the [Boids API](docs/api.md); they do not need to use the Scenario registry or scenario startup modules.
+
+## Use from source with Rojo
 
 Map `src/BoidsSystem` to ServerScriptService.BoidsSystem and the two vendored libraries to ReplicatedStorage.ExternalLibraries, retaining metadata/reference attributes. The project file shows the mappings. PackageBootstrap moves BoidsReplicated and BoidsClient into their runtime services; do not also map duplicate runtime copies.
 
