@@ -1,0 +1,104 @@
+{
+    "name":  "BoidsSystemScenarios",
+    "serveAddress":  "127.0.0.1",
+    "servePort":  34873,
+    "tree":  {
+                 "$className":  "DataModel",
+                 "$ignoreUnknownInstances":  true,
+                 "Workspace":  {
+                                   "$className":  "Workspace",
+                                   "$ignoreUnknownInstances":  true,
+                                   "$properties":  {
+                                                       "AuthorityMode":  "Server",
+                                                       "CollisionGroupData":  {
+                                                                                  "BinaryString":  "AQQABPf///8HRGVmYXVsdAEE+////w5Cb2lkUmVuZGVyYWJsZQIE/f///wtHcm91bmRRdWVyeQME/v///xNCb2lkUHJvamVjdGlsZVF1ZXJ5"
+                                                                              },
+                                                       "Gravity":  0.0,
+                                                       "NextGenerationReplication":  "Enabled",
+                                                       "PlayerScriptsUseInputActionSystem":  "Enabled",
+                                                       "ReplicationFrequency":  {
+                                                                                    "Enum":  0
+                                                                                },
+                                                       "ReplicationThroughput":  {
+                                                                                     "Enum":  0
+                                                                                 },
+                                                       "SerializedOverrides":  {
+                                                                                   "BinaryString":  ""
+                                                                               },
+                                                       "SignalBehavior":  "Deferred",
+                                                       "StreamOutBehavior":  "Opportunistic",
+                                                       "StreamingEnabled":  true,
+                                                       "StreamingIntegrityMode":  "PauseOutsideLoadedArea",
+                                                       "UseFixedSimulation":  "Enabled",
+                                                       "WorldPivotData":  {
+                                                                              "OptionalCFrame":  {
+                                                                                                     "position":  [
+                                                                                                                      0.0,
+                                                                                                                      0.0,
+                                                                                                                      0.0
+                                                                                                                  ],
+                                                                                                     "orientation":  [
+                                                                                                                         [
+                                                                                                                             1.0,
+                                                                                                                             0.0,
+                                                                                                                             0.0
+                                                                                                                         ],
+                                                                                                                         [
+                                                                                                                             0.0,
+                                                                                                                             1.0,
+                                                                                                                             0.0
+                                                                                                                         ],
+                                                                                                                         [
+                                                                                                                             0.0,
+                                                                                                                             0.0,
+                                                                                                                             1.0
+                                                                                                                         ]
+                                                                                                                     ]
+                                                                                                 }
+                                                                          }
+                                                   }
+                               },
+                 "Players":  {
+                                 "$className":  "Players",
+                                 "$ignoreUnknownInstances":  true,
+                                 "$properties":  {
+                                                     "CharacterAutoLoads":  false
+                                                 }
+                             },
+                 "ReplicatedStorage":  {
+                                            "ExternalLibraries":  {
+                                                                      "$className": "Folder",
+                                                                     "BinaryHeaps":  {
+                                                                                         "$path":  "vendor/ExternalLibraries/BinaryHeaps"
+                                                                                     },
+                                                                     "Benchmarker":  {
+                                                                                         "$path":  "vendor/ExternalLibraries/Benchmarker"
+                                                                                     }
+                                                                 }
+                                       },
+                 "ServerScriptService":  {
+                                             "BoidsSystem":  {
+                                                                 "$path":  "src/BoidsSystem"
+                                                             },
+                                             "BoidsScenarioLauncher":  {
+                                                                           "$path":  "scenario/Start.server.luau"
+                                                                       }
+                                         },
+                 "ServerStorage":  {
+                                       "UnitTest":  {
+                                                        "$path":  "tests/UnitTest"
+                                                    }
+                                   },
+                 "StarterPlayer":  {
+                                       "StarterPlayerScripts":  {
+                                                                    "HostHandoffVerification": {
+                                                                        "$path": "tests/Client/VerifyHostHandoff.luau"
+                                                                    },
+                                                                    "BoidsScenarioLauncher":  {
+                                                                                                  "$path":  "scenario/Start.client.luau"
+                                                                                              },
+                                                                    "$className":  "StarterPlayerScripts"
+                                                                }
+                                   }
+             }
+}

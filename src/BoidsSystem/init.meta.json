@@ -1,0 +1,13 @@
+{
+  "properties": {
+    "SerializedOverrides": {
+      "BinaryString": ""
+    },
+    "SourceAssetId": 130098300956090.0
+  },
+  "attributes": {
+    "BackupCreatedUtc": "2026-09-14T18:36:36Z",
+    "BackupOf": "ServerScriptService.BoidsSystem",
+    "BoidsSystemTemporarilyDisabled": false
+  }
+}

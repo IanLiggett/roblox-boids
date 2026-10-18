@@ -1,0 +1,11 @@
+{
+  "properties": {
+    "RunContext": "Server",
+    "SerializedOverrides": {
+      "BinaryString": ""
+    }
+  },
+  "attributes": {
+    "BoidsSystem_PreDisableEnabled": true
+  }
+}

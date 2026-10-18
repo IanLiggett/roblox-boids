@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "SerializedOverrides": {
+      "BinaryString": ""
+    }
+  },
+  "attributes": {
+    "GeneratedAtUtc": "2026-10-15T18:42:31Z",
+    "GeneratedStep01Fixture": true,
+    "SourcePath": "ServerScriptService.BoidsSystem.BoidsReplicated.Boids.WorkerCore"
+  }
+}

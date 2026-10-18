@@ -1,0 +1,11 @@
+{
+  "properties": {
+    "SerializedOverrides": {
+      "BinaryString": ""
+    }
+  },
+  "attributes": {
+    "ActiveBoidsScenario": "PolarSphereObstacle",
+    "BoidSimulationMode": "both"
+  }
+}

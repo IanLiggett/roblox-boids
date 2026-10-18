@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "SerializedOverrides": {
+      "BinaryString": ""
+    }
+  },
+  "attributes": {
+    "BoidsSystem_PreDisableEnabled": true
+  }
+}

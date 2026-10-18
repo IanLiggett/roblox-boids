@@ -1,0 +1,31 @@
+--!strict
+return function(t: any): ()
+ local Divergence = require(game.ReplicatedStorage.BoidsReplicated.Testing.PerformanceTelemetry.Divergence)
+ t.test("divergence time-aligns fresh accepted corrections without changing state", function()
+  local reads = 0
+  local result = Divergence.Read(function(visit)
+   visit(1, Vector3.zero, Vector3.xAxis, 9)
+  end, function(id)
+   assert(id == 1)
+   reads += 1
+   return Vector3.new(4,0,0), Vector3.new(3,0,0)
+  end, 10)
+  assert(result)
+  t.expect.equal(result.sampleCount, 1)
+  t.expect.equal(result.positionRmse, 3)
+  t.expect.equal(result.velocityRmse, 2)
+  t.expect.equal(result.maxPositionError, 3)
+  t.expect.equal(reads, 1)
+ end)
+ t.test("divergence excludes future, stale and unavailable rows", function()
+  local result = Divergence.Read(function(visit)
+   visit(1, Vector3.zero, Vector3.zero, 11)
+   visit(2, Vector3.zero, Vector3.zero, 6)
+   visit(3, Vector3.zero, Vector3.zero, 10)
+  end, function(id)
+   assert(id == 3, "stale or future rows must not read simulation")
+   return nil,nil
+  end, 10)
+  t.expect.equal(result, nil)
+ end)
+end
