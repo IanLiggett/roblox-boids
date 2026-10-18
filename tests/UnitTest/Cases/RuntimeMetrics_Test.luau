@@ -1,7 +1,10 @@
 --!strict
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
  local Metrics = require(game.ReplicatedStorage.BoidsReplicated.RuntimeMetrics)
- local function measurement(): any
+ local SharedTypes = require(game.ReplicatedStorage.BoidsReplicated.SharedTypes)
+ local function measurement(): SharedTypes.WorkerMeasurement
   return {detailed=true,executionMs=0,snapshotMs=0,scheduledBoids=0,observedBoids=0,processedBoids=0,skippedBoids=0,survivingBoids=0,migratedBoids=0,returnedSourceBoids=0,candidateExaminations=0,acceptedDirectInteractions=0,aggregateBucketVisits=0,acceptedAggregatePopulation=0,obstacleForwardRays=0,obstacleEscapeRays=0,obstacleDetourStarts=0,obstacleDetourUpdates=0,obstacleSoftFallbacks=0,pages=0,inputBufferBytes=0,outputBufferBytes=0}
  end
  -- A short sample does not reset counters or advance its window.

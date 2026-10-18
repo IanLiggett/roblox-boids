@@ -1,25 +1,45 @@
 --!strict
-return function(t: any): ()
-	local package = game.ReplicatedStorage:WaitForChild("BoidsReplicated")
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+	local ExecutionTypes = require(package.Boids.ActorsInitializer.JobExecution)
+	-- Preserve clone-local execution state while keeping the production contract.
+	local loadExecution: (ModuleScript) -> typeof(ExecutionTypes) = require
+	local SharedTypes = require(package.SharedTypes)
 	local executionFixture = package.Boids.ActorsInitializer.JobExecution:Clone()
 	executionFixture.Name = "JobExecutionUnitFixture"
 	executionFixture.Parent = package.Boids.ActorsInitializer
-	local execution = require(executionFixture)
-	local reusableCounts: {[any]: number} = {}
-	execution.SetOnActorReusable(function(actor: any): ()
+	local execution: typeof(ExecutionTypes) = loadExecution(executionFixture)
+	local reusableCounts: {[ExecutionTypes.ActorState]: number} = {}
+	execution.SetOnActorReusable(function(actor: ExecutionTypes.ActorState): ()
 		t.expect.truthy(actor.ready)
 		t.expect.equal(actor.execution,nil)
 		reusableCounts[actor]=(reusableCounts[actor] or 0)+1
 	end)
 	local metrics = require(package.RuntimeMetrics).State
 	local nextId = -100
-	local function fixture(mode: string?): any
+	type GroupFixture = {id: number}
+	type JobFixture = {id: number, startTime: number, estimatedCost: number, jobCells: {{scheduledBoidCount: number}}}
+	type MeasurementFixture = {
+		detailed: false, executionMs: number, scheduledBoids: number, processedBoids: number, skippedBoids: number,
+		survivingBoids: number, migratedBoids: number, observedBoids: number, returnedSourceBoids: number,
+	}
+	type ResultFixture = {completionTime: number, jobCells: {SharedTypes.WorkerJobCell}, measurement: MeasurementFixture}
+	type ParentFixture = {SendMessage: (ParentFixture, string, JobFixture, BindableEvent) -> ()}
+	type Fixture = {
+		actor: ExecutionTypes.ActorState, group: GroupFixture, job: JobFixture, commits: number, retires: number,
+		outcome: ExecutionTypes.Outcome?, current: boolean, gate: BindableEvent, record: ExecutionTypes.Execution,
+		reply: BindableEvent, result: () -> ResultFixture, finish: () -> (), cleanup: () -> (),
+	}
+	local function fixture(mode: string?): Fixture
 		nextId -= 1
 		local reply: BindableEvent? = nil
-		local group: any = {id = nextId}
-		local job: any = {id = nextId, startTime = workspace:GetServerTimeNow() - 0.01, estimatedCost = 10,
+		local group: GroupFixture = {id = nextId}
+		local job: JobFixture = {id = nextId, startTime = workspace:GetServerTimeNow() - 0.01, estimatedCost = 10,
 			jobCells = {{scheduledBoidCount = 1}}}
-		local actor = execution.NewActor({Parent = {SendMessage = function(_: any, name: string, sent: any, event: BindableEvent): ()
+		local parent: ParentFixture = {SendMessage = function(_: ParentFixture, name: string, sent: JobFixture, event: BindableEvent): ()
 			t.expect.equal(name, "NewJob")
 			t.expect.equal(sent, job)
 			reply = event
@@ -29,30 +49,33 @@ return function(t: any): ()
 					measurement = {detailed=false,executionMs=1,scheduledBoids=1,processedBoids=1,skippedBoids=0,
 					survivingBoids=1,migratedBoids=0,observedBoids=1,returnedSourceBoids=1}},0)
 			end
-		end}} :: any, workspace:GetServerTimeNow())
-		local f: any = {actor=actor, group=group, job=job, commits=0, retires=0, outcome=nil, current=true}
-		local callbacks: any = {
+		end}
+		-- The isolated message sender implements only the worker-instance access
+		-- used by execution; the clone owns no real Actor or simulation runtime.
+		local actor: ExecutionTypes.ActorState = execution.NewActor(({Parent = parent} :: unknown) :: BaseScript, workspace:GetServerTimeNow())
+		local f = {actor=actor, group=group, job=job, commits=0, retires=0, outcome=nil :: ExecutionTypes.Outcome?, current=true,
+			gate=Instance.new("BindableEvent")}
+		local callbacks: ExecutionTypes.Callbacks = {
 			IsCurrent = function(): boolean
 				if mode == "owner_failed" then error("injected owner check failure") end
 				return f.current
 			end,
-			Commit = function(): boolean
+			Commit = function(_result: SharedTypes.WorkerJobResult, _delay: number): boolean
 				f.commits += 1
 				t.expect.falsy(actor.ready)
 				if mode == "merge_failed" then error("injected merge failure") end
 				if mode == "yield" then f.gate.Event:Wait() end
 				return mode ~= "incomplete"
 			end,
-			Retire = function(outcome: string): ()
+			Retire = function(outcome: ExecutionTypes.Outcome, _completionTime: number?): ()
 				t.expect.falsy(actor.ready)
 				f.retires += 1
 				f.outcome = outcome
 			end,
 		}
-		f.gate = Instance.new("BindableEvent")
-		f.record = execution.Start(actor, group, job, 0, 4, callbacks)
-		f.reply = reply
-		function f.result(): any
+		f.record = execution.Start(actor, group :: SharedTypes.Group, job :: SharedTypes.Job, 0, 4, callbacks)
+		f.reply = reply :: BindableEvent
+		function f.result(): ResultFixture
 			return {completionTime = workspace:GetServerTimeNow(), jobCells={},
 				measurement={detailed=false,executionMs=1,scheduledBoids=1,processedBoids=1,skippedBoids=0,
 				survivingBoids=1,migratedBoids=0,observedBoids=1,returnedSourceBoids=1}}
@@ -109,7 +132,7 @@ return function(t: any): ()
 	end)
 	t.test("busy reservation cannot be scheduled twice", function()
 		local f=fixture()
-		t.expect.throws(function() execution.Start(f.actor,{} :: any,{} :: any,0,4,{} :: any) end)
+		t.expect.throws(function(): () execution.Start(f.actor,{} :: SharedTypes.Group,{} :: SharedTypes.Job,0,4,{} :: ExecutionTypes.Callbacks) end)
 		f.finish();t.expect.equal(f.commits,1);f.cleanup()
 	end)
 	t.test("timeout retires once, quarantines scratch, and rejects late feedback/result", function()
@@ -145,7 +168,7 @@ return function(t: any): ()
 	t.test("late duplicate reply cannot finish a replacement execution", function()
 		local f=fixture();execution.Expire(f.record);f.finish()
 		local retired=0
-		local replacement=execution.Start(f.actor,f.group,f.job,0,4,{
+		local replacement=execution.Start(f.actor,f.group :: SharedTypes.Group,f.job :: SharedTypes.Job,0,4,{
 			IsCurrent=function() return true end, Commit=function() return true end,
 			Retire=function() retired+=1 end,
 		})

@@ -20,8 +20,9 @@ function QueryIndexConfig.GetMode(): Mode
 		return cachedMode
 	end
 	local mode = script.Parent:GetAttribute(ATTRIBUTE_NAME)
-	cachedMode = if isValidMode(mode) then mode :: Mode else DEFAULT_MODE
-	return cachedMode
+	local resolved: Mode = if isValidMode(mode) then mode :: Mode else DEFAULT_MODE
+	cachedMode = resolved
+	return resolved
 end
 
 function QueryIndexConfig.SetMode(mode: Mode): boolean

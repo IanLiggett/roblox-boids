@@ -24,7 +24,7 @@ local BoidsReplicated = script.Parent.Parent
 local SharedTypes = require(BoidsReplicated.SharedTypes)
 
 local Dependencies = BoidsReplicated.Dependencies
-local BinaryHeaps = require(Dependencies.BinaryHeaps.Value)
+local BinaryHeaps = require(Dependencies.BinaryHeaps.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.BinaryHeaps))
 local Scheduler = {}
 
 
@@ -85,11 +85,11 @@ function Scheduler.EffectiveInterval<T>(schedulee: Schedulee<T>): number
 	return schedulee.interval * schedulee.intervalMultiplier
 end
 
-function Scheduler.SetIntervalMultiplierSoft<T>(schedulee: Schedulee<T>, multiplier: number)
+function Scheduler.SetIntervalMultiplierSoft<T>(schedulee: Schedulee<T>, multiplier: number): ()
 	schedulee.intervalMultiplier = math.max(1, multiplier)
 end
 
-function Scheduler.SetIntervalMultiplier<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>, multiplier: number, now: number)
+function Scheduler.SetIntervalMultiplier<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>, multiplier: number, now: number): ()
 	multiplier = math.max(1, multiplier // 1)
 
 	const oldInterval = Scheduler.EffectiveInterval(schedulee)
@@ -115,12 +115,12 @@ function Scheduler.SetIntervalMultiplier<T>(scheduler: Scheduler<T>, schedulee: 
 	end
 end
 
-function Scheduler.ScheduleSchedulee<T>(schedulee: Schedulee<T>)
+function Scheduler.ScheduleSchedulee<T>(schedulee: Schedulee<T>): ()
 	schedulee.alreadyScheduled = true
 	schedulee.heapVersion += 1
 end
 
-function Scheduler.EnqueueSchedulee<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>)
+function Scheduler.EnqueueSchedulee<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>): ()
 	schedulee.heapVersion += 1
 
 	scheduler.nextHeapNodeId += 1
@@ -136,12 +136,12 @@ function Scheduler.EnqueueSchedulee<T>(scheduler: Scheduler<T>, schedulee: Sched
 	BinaryHeaps.push(scheduler.heap, wakeTime, nodeId)
 end
 
-function Scheduler.ReleaseSchedulee<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>)
+function Scheduler.ReleaseSchedulee<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>): ()
 	schedulee.alreadyScheduled = false
 	Scheduler.EnqueueSchedulee(scheduler, schedulee)
 end
 
-function Scheduler.MarkScheduleeCompleted<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>, completionTime: number)
+function Scheduler.MarkScheduleeCompleted<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>, completionTime: number): ()
 	local interval: number = Scheduler.EffectiveInterval(schedulee)
 
 	schedulee.lastUpdated = completionTime
@@ -214,7 +214,7 @@ function Scheduler.PeekNextWakeTime<T>(scheduler: Scheduler<T>): number?
 	return node and node.wakeTime or nil
 end
 
-function Scheduler.RebuildSchedulerHeap<T>(scheduler: Scheduler<T>)
+function Scheduler.RebuildSchedulerHeap<T>(scheduler: Scheduler<T>): ()
 	BinaryHeaps.clear(scheduler.heap)
 	table.clear(scheduler.heapNodes)
 	scheduler.nextHeapNodeId = 0

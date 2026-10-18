@@ -3,8 +3,8 @@
 local RunService = game:GetService("RunService")
 
 local RuntimeConfig = {}
-export type Options = {actorCount: number?, targetActorJobMs: number?}
-export type Resolved = {actorCount: number, targetActorJobMs: number}
+export type Options = {read actorCount: number?, read targetActorJobMs: number?}
+export type Resolved = {read actorCount: number, read targetActorJobMs: number}
 RuntimeConfig.Defaults = table.freeze({actorCount = if RunService:IsClient() then 16 else 2, targetActorJobMs = 4})
 
 function RuntimeConfig.Resolve(options: Options?): Resolved

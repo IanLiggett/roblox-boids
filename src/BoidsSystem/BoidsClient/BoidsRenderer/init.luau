@@ -24,7 +24,9 @@ local RunService = game:GetService("RunService")
 local Player = Players.LocalPlayer
 local Camera: Camera = workspace.CurrentCamera :: Camera
 
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated") :: typeof(script.Parent.Parent.BoidsReplicated)
+-- The type anchor remains in the edit-time hierarchy; bootstrap relocates the same package.
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 
 local SharedTypes = require(BoidsReplicated.SharedTypes)
 local Quantization = require(BoidsReplicated.Quantization)
@@ -252,9 +254,8 @@ local function assignBoidToRenderCell(boidId: number, cellOriginX: number, cellO
 
 	removeBoidFromRenderCell(boidId)
 
-	local cell: RenderCell? = renderCellsByKey[cellKey]
-	if not cell then
-		cell = {
+	local existing: RenderCell? = renderCellsByKey[cellKey]
+	local cell: RenderCell = if existing then existing else {
 			key = cellKey,
 			originX = originX,
 			originY = originY,
@@ -265,6 +266,7 @@ local function assignBoidToRenderCell(boidId: number, cellOriginX: number, cellO
 			scheduledInterval = 0,
 			resumeSlot = 1,
 		}
+	if not existing then
 		renderCellsByKey[cellKey] = cell
 		activeRenderCells[#activeRenderCells + 1] = cell
 		activeRenderCellIndexByKey[cellKey] = #activeRenderCells
@@ -459,7 +461,7 @@ local function refreshCompiledRenderSchedule(clientConfig: LODConfig.ClientConfi
 	end
 
 	compiledClientConfig = clientConfig
-	compiledRenderBands = table.create(#clientConfig.visibleRenderBands)
+	compiledRenderBands = table.create(#clientConfig.visibleRenderBands) :: {CompiledRenderBand}
 	for index, band: LODConfig.RenderBand in clientConfig.visibleRenderBands do
 		compiledRenderBands[index] = {
 			range = band.range,
@@ -717,10 +719,9 @@ local function onRenderStepped(frameDt: number): ()
 			end
 		end
 		if cell.resumeSlot > 1 or cell.nextDueTime <= now then
-			if not cell.deferredSince then
-				cell.deferredSince = now
-			end
-			if now - cell.deferredSince >= AGING_THRESHOLD then
+			local deferredSince: number = cell.deferredSince or now
+			if not cell.deferredSince then cell.deferredSince = deferredSince end
+			if now - deferredSince >= AGING_THRESHOLD then
 				addAgingRenderCell(cell)
 			end
 		end
@@ -868,7 +869,7 @@ local function registerBoid(boidId: number, boid: Model | BasePart, now: number)
 	end
 end
 
-seedClientQueryIndex = function()
+seedClientQueryIndex = function(): ()
 	local queryIndex = clientQueryIndex
 	if not queryIndex then
 		return
@@ -877,7 +878,8 @@ seedClientQueryIndex = function()
 		local motor = renderMotors[renderIndex]
 		local transform = renderTransforms[renderIndex]
 		local part = if motor then motor.Part1 else nil
-		local model = boidModelById[boidId] or (part and SharedTypes.BoidModels[part.Name]) or SharedTypes.BoidModels.Boid
+		local modelsByName: {[string]: BoidModel} = SharedTypes.BoidModels :: {[string]: BoidModel}
+		local model = boidModelById[boidId] or (part and modelsByName[part.Name]) or SharedTypes.BoidModels.Boid
 		local position = if part then part.Position elseif transform then transform.Position else nil
 		if position then
 			queryIndex:Update(boidId, position, BoidCollisionConfig.GetRadius(model))
@@ -936,7 +938,7 @@ local function deleteRenderedBoid(boidId: number): ()
 	renderedCountByGroup[groupId] = math.max(0, (renderedCountByGroup[groupId] or 0) - 1)
 	groupIdByBoid[boidId] = nil
 	local groupTracker = boidsByGroup[groupId]
-	local boid: Instance = groupTracker and groupTracker[boidId]
+	local boid: (Model | BasePart)? = if groupTracker then groupTracker[boidId] else nil
 	if groupTracker then
 		groupTracker[boidId] = nil
 	end
@@ -1189,7 +1191,15 @@ function BoidsRenderer.PickRenderedBoid(origin: Vector3, direction: Vector3, gro
 	return { boidId = bestId, groupId = groupIdByBoid[bestId], position = renderTransforms[renderIndexByBoid[bestId]].Position, distance = bestDistance }
 end
 
-function BoidsRenderer.RaycastBoids(origin: Vector3, direction: Vector3, sweepRadius: number?, ignoredBoidIds: {[number]: boolean}?)
+export type QueryHit = {
+	boidId: number,
+	Instance: BasePart?,
+	Position: Vector3,
+	Distance: number,
+	Normal: Vector3,
+}
+
+function BoidsRenderer.RaycastBoids(origin: Vector3, direction: Vector3, sweepRadius: number?, ignoredBoidIds: {[number]: boolean}?): QueryHit?
 	local queryIndex = getClientQueryIndex()
 	if not queryIndex then
 		return nil
@@ -1207,13 +1217,13 @@ function BoidsRenderer.RaycastBoids(origin: Vector3, direction: Vector3, sweepRa
 	}
 end
 
-function BoidsRenderer.GetBoidsInRadius(center: Vector3, radius: number, ignoredBoidIds: {[number]: boolean}?)
+function BoidsRenderer.GetBoidsInRadius(center: Vector3, radius: number, ignoredBoidIds: {[number]: boolean}?): {QueryHit}
 	local queryIndex = getClientQueryIndex()
 	if not queryIndex then
 		return {}
 	end
 	local sourceHits = queryIndex:QueryRadius(center, radius, ignoredBoidIds)
-	local hits = table.create(#sourceHits)
+	local hits: {QueryHit} = table.create(#sourceHits) :: {QueryHit}
 	for index, hit in sourceHits do
 		hits[index] = {
 			boidId = hit.boidId,
@@ -1226,7 +1236,7 @@ function BoidsRenderer.GetBoidsInRadius(center: Vector3, radius: number, ignored
 	return hits
 end
 
-function BoidsRenderer.GetQueryMetrics()
+function BoidsRenderer.GetQueryMetrics(): BoidQueryIndex.Metrics
 	if not clientQueryIndex then
 		return {
 			entryCount = 0,

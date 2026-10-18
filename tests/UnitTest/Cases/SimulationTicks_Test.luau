@@ -1,6 +1,8 @@
 --!strict
 
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
 	local Quantization = require(game.ReplicatedStorage.BoidsReplicated.Quantization)
 
 	t.test("background prediction preserves twelve seconds plus scheduling delay", function()

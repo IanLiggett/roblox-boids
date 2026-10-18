@@ -1,14 +1,28 @@
 --!strict
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
 	local package = game.ReplicatedStorage.BoidsReplicated
 	local diagnostics = require(package.Boids.Diagnostics)
-	local benchmarkers = require(package.Dependencies.Benchmarker.Value)
+	local benchmarkers = require(package.Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
+	local SharedTypes = require(package.SharedTypes)
+	local ActorsInitializer = require(package.Boids.ActorsInitializer)
 
-	local function fixture(): (any, any)
+	type CellFixture = {entity: {id: number, boidCount: number}, alreadyScheduled: boolean, lastUpdated: number}
+	type GroupFixture = {
+		id: number, boidCount: number, cellCount: number,
+		jobMsStats: benchmarkers.Benchmarker, neighborItersPerJob: benchmarkers.Benchmarker,
+		jobSendStats: benchmarkers.Benchmarker, jobReceiveStats: benchmarkers.Benchmarker,
+		cellsPerSecond: benchmarkers.Benchmarker, boidsPerSecond: benchmarkers.Benchmarker,
+		scheduler: {schedulees: {[number]: CellFixture}},
+	}
+	type ActorFixture = {timeIdleStats: benchmarkers.Benchmarker, completedJobs: number, processedBoids: number, workerExecutionMs: number}
+
+	local function fixture(): ({[number]: GroupFixture}, {ActorFixture})
 		local stats = benchmarkers.newBenchmarker(10)
 		benchmarkers.push(stats, 4)
 		benchmarkers.push(stats, 8)
-		local group: any = {
+		local group: GroupFixture = {
 			id=17,boidCount=6,cellCount=2,
 			jobMsStats=stats,neighborItersPerJob=stats,jobSendStats=stats,jobReceiveStats=stats,
 			cellsPerSecond=stats,boidsPerSecond=stats,
@@ -22,8 +36,9 @@ return function(t: any): ()
 
 	t.test("diagnostic reads copy nested data and preserve group/cell ownership", function()
 		local groups, actors = fixture()
-		local function isDue(cell: any, _: number): boolean return not cell.alreadyScheduled end
-		local first = diagnostics.Read(groups, actors, isDue, true)
+		local function isDue(cell: SharedTypes.Schedulee<SharedTypes.Cell>, _: number): boolean return not cell.alreadyScheduled end
+		-- Partial doubles contain exactly the fields consumed by this read-only API.
+		local first = diagnostics.Read(groups :: SharedTypes.GroupRegistry, actors :: {ActorsInitializer.ActorState}, isDue, true)
 		t.expect.equal(first.summary.groupCount,1)
 		t.expect.equal(first.summary.population,6)
 		t.expect.equal(first.summary.cellCount,2)
@@ -34,9 +49,9 @@ return function(t: any): ()
 		t.expect.equal(first.cells.maxPopulation,4)
 		t.expect.equal(first.groups[1].jobMs.average,6)
 		t.expect.equal(first.actors[1].idleSeconds.sampleCount,2)
-		local function onlyValues(value: any): ()
+		local function onlyValues(value: unknown): ()
 			if type(value) == "table" then
-				for _, child in value do onlyValues(child) end
+				for _, child in value :: {[unknown]: unknown} do onlyValues(child) end
 			else
 				t.expect.truthy(type(value)=="number" or type(value)=="boolean" or type(value)=="string")
 			end
@@ -45,7 +60,7 @@ return function(t: any): ()
 		first.groups[1].jobMs.average = 999
 		first.actors[1].idleSeconds.sampleCount = 999
 		first.summary.population = 999
-		local second = diagnostics.Read(groups, actors, isDue, true)
+		local second = diagnostics.Read(groups :: SharedTypes.GroupRegistry, actors :: {ActorsInitializer.ActorState}, isDue, true)
 		t.expect.equal(second.groups[1].jobMs.average,6)
 		t.expect.equal(second.actors[1].idleSeconds.sampleCount,2)
 		t.expect.equal(second.summary.population,6)
@@ -56,7 +71,7 @@ return function(t: any): ()
 		local groups, actors = fixture()
 		local empty = benchmarkers.newBenchmarker(10)
 		actors[1].timeIdleStats = empty
-		local snapshot = diagnostics.Read(groups,actors,function(): boolean return false end,false)
+		local snapshot = diagnostics.Read(groups :: SharedTypes.GroupRegistry,actors :: {ActorsInitializer.ActorState},function(): boolean return false end,false)
 		t.expect.equal(snapshot.groups[1].neighborWorkPerJob,nil)
 		t.expect.equal(snapshot.actors[1].idleSeconds.minimum,nil)
 		t.expect.equal(snapshot.actors[1].idleSeconds.maximum,nil)

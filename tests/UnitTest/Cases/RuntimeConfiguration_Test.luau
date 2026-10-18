@@ -1,5 +1,7 @@
 --!strict
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
 	local config = require(game.ReplicatedStorage.BoidsReplicated.RuntimeConfig)
 	local defaultActorCount = if game:GetService("RunService"):IsClient() then 16 else 2
 	t.test("generic configuration defaults and independent overrides", function()

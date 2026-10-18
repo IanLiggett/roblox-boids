@@ -22,7 +22,7 @@ local module = {}
 
 local Dependencies = script.Dependencies
 
-local LazyHeaps = require(Dependencies.LazyHeap.Value)
+local LazyHeaps = require(Dependencies.LazyHeap.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.BinaryHeaps.LazyHeaps))
 
 type LazyHeap = LazyHeaps.LazyHeap
 
@@ -143,7 +143,7 @@ function module.getSD(benchmarker:Benchmarker): number
 	return benchmarker.SD
 end
 
-local function moveLowerToUpper(benchmarker: Benchmarker)
+local function moveLowerToUpper(benchmarker: Benchmarker): ()
 	local item: number?, id: number? = LazyHeaps.pop(benchmarker.lowerHeap)
 
 	LazyHeaps.push(benchmarker.upperHeap, item :: number, id :: number)
@@ -155,7 +155,7 @@ local function moveLowerToUpper(benchmarker: Benchmarker)
 	buffer.writeu8(benchmarker.sides, slot * SIDE_SIZE, SIDE_UPPER)
 end
 
-local function moveUpperToLower(benchmarker: Benchmarker)
+local function moveUpperToLower(benchmarker: Benchmarker): ()
 	local item: number?, id: number? = LazyHeaps.pop(benchmarker.upperHeap)
 
 	LazyHeaps.push(benchmarker.lowerHeap, item :: number, id :: number)
@@ -167,7 +167,7 @@ local function moveUpperToLower(benchmarker: Benchmarker)
 	buffer.writeu8(benchmarker.sides, slot * SIDE_SIZE, SIDE_LOWER)
 end
 
-local function rebalance(benchmarker: Benchmarker)
+local function rebalance(benchmarker: Benchmarker): ()
 	while benchmarker.lowerSize > benchmarker.upperSize + 1 do
 		moveLowerToUpper(benchmarker)
 	end
@@ -177,7 +177,7 @@ local function rebalance(benchmarker: Benchmarker)
 	end
 end
 
-local function updateStats(benchmarker: Benchmarker)
+local function updateStats(benchmarker: Benchmarker): ()
 	local itemCount: number = benchmarker.itemCount
 	if itemCount == 0 then
 		benchmarker.avg = 0
@@ -208,7 +208,7 @@ local function updateStats(benchmarker: Benchmarker)
 	end
 end
 
-local function rebuildHeaps(benchmarker: Benchmarker)
+local function rebuildHeaps(benchmarker: Benchmarker): ()
 	local windowLength: number = benchmarker.windowLength
 
 	benchmarker.lowerHeap = LazyHeaps.newLazyHeap(benchmarker.isValid, maxHeapCompare, nil, windowLength)
@@ -246,7 +246,7 @@ local function rebuildHeaps(benchmarker: Benchmarker)
 	rebalance(benchmarker)
 	updateStats(benchmarker)
 end
-function module.push(benchmarker: Benchmarker, item: number)
+function module.push(benchmarker: Benchmarker, item: number): ()
 	local lowerHeap: LazyHeap, upperHeap: LazyHeap = benchmarker.lowerHeap, benchmarker.upperHeap
 	local windowLength: number = benchmarker.windowLength
 	local currentId: number = benchmarker.streamCount
@@ -315,7 +315,7 @@ function module.push(benchmarker: Benchmarker, item: number)
 	end
 end
 
-function module.printStats(benchmarker: Benchmarker, start: string?)
+function module.printStats(benchmarker: Benchmarker, start: string?): ()
 	local msg: string = (start or "") .. `TOTAL: {benchmarker.itemCount} | AVG: {benchmarker.avg} | MED: {benchmarker.med} | MIN: {benchmarker.min} | MAX: {benchmarker.max} | SD: {benchmarker.SD }`
 	
 	if benchmarker.staleThreshold then
@@ -330,7 +330,7 @@ function module.printStats(benchmarker: Benchmarker, start: string?)
 	--print(`Avg: {module.getAvg(benchmarker)}, Med: {module.getMed(benchmarker)}, Min: {module.getMin(benchmarker)}, Max: {module.getMax(benchmarker)}`)
 end
 
-function module.clear(benchmarker: Benchmarker)
+function module.clear(benchmarker: Benchmarker): ()
 	-- clear stuff
 	
 	benchmarker.itemCount = 0

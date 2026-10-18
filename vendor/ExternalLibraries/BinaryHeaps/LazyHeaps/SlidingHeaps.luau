@@ -60,7 +60,6 @@ function module.newSlidingHeap(windowLength: number?, compareWith: ((item1: numb
 	return slidingHeap
 end
 
-module.size = LazyHeaps.size
 module.empty = LazyHeaps.empty
 
 function module.push(slidingHeap: SlidingHeap, value: number): number?
@@ -98,7 +97,7 @@ function module.size(slidingHeap: SlidingHeap): number
 	return slidingHeap.size
 end
 
-function module.clear(slidingHeap: SlidingHeap)
+function module.clear(slidingHeap: SlidingHeap): ()
 	slidingHeap.streamCount = 0
 	LazyHeaps.clear(slidingHeap)
 end

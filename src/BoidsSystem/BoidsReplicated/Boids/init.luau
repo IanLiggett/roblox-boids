@@ -46,7 +46,7 @@ local IdAllocator = require(script.IdAllocator)
 local ResultCommit = require(script.ResultCommit)
 
 local Dependencies = BoidsReplicated.Dependencies
-local Benchmarkers = require(Dependencies.Benchmarker.Value)
+local Benchmarkers = require(Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
 local ClientRendererBridge = require(BoidsReplicated.ClientRendererBridge)
 
 local Boids = {}
@@ -143,7 +143,7 @@ function Boids.SubscribeCreated(observer: CreatedObserver): () -> ()
 	end
 end
 
-local function emitCreated(boidId: number, position: Vector3, model: BoidModel)
+local function emitCreated(boidId: number, position: Vector3, model: BoidModel): ()
 	for _, observer in createdObservers do
 		local ok, err = pcall(observer, boidId, position, model)
 		if not ok then
@@ -152,7 +152,7 @@ local function emitCreated(boidId: number, position: Vector3, model: BoidModel)
 	end
 end
 
-local function emitDeleted(boidIds: {number})
+local function emitDeleted(boidIds: {number}): ()
 	for _, observer in deletedObservers do
 		local ok, err = pcall(observer, boidIds)
 		if not ok then
@@ -196,7 +196,7 @@ function Boids.GetLODPreset(): LODPresetName
 	return LODConfig.GetPresetName()
 end
 
-function Boids.SetTarget(group:Group, target:Target, debugs:boolean?)
+function Boids.SetTarget(group:Group, target:Target, debugs:boolean?): ()
 	local targetPosition = resolvePositionSource(target)
 	DebugPresentation.SetTarget(group.lifetime, if debugs then targetPosition else nil)
 
@@ -208,7 +208,7 @@ function Boids.SetTarget(group:Group, target:Target, debugs:boolean?)
 	SimulationReplication.ServerSetTarget(group.id, target)
 end
 
-function Boids.SetPath(group: Group, path: {PathNode}, switchToClosestNode: boolean?, loops: boolean?, debugs: boolean?, pathArrivalRadius: number?)
+function Boids.SetPath(group: Group, path: {PathNode}, switchToClosestNode: boolean?, loops: boolean?, debugs: boolean?, pathArrivalRadius: number?): ()
 	assert(#path > 0, "A boid path must contain at least one node")
 	assert(#path <= 255, "A boid path can contain at most 255 nodes")
 
@@ -273,7 +273,7 @@ function Boids.AddGravityWell(position: Vector3, strength: number, influenceRadi
 
 	local replicatedGroupIds: {number}? = nil
 	if groups then
-		replicatedGroupIds = table.create(#groups)
+		replicatedGroupIds = table.create(#groups) :: {number}
 		for index, group: Group in groups do
 			table.insert(replicatedGroupIds, group.id)
 			local wells = groupGravityWells[group.id]
@@ -434,7 +434,7 @@ local function claimBoidId(explicitId: number?): number?
 	return id
 end
 
-local function returnBoidId(id:number)
+local function returnBoidId(id:number): ()
 	setServerOwned(id, false)
 	if not serverReservations[id] then IdAllocator.Release(freeBoidIds, id) end
 end
@@ -613,7 +613,7 @@ function Boids.IsDeletionPending(boidId: number): boolean
 	return pendingDeletionIds[boidId] ~= nil or (boidLifetimes[boidId] ~= nil and boidGroupById[boidId] == nil)
 end
 
-function Boids.QueueDeleteBoid(boidId: number)
+function Boids.QueueDeleteBoid(boidId: number): ()
 	if not boidGroupById[boidId] or pendingDeletionIds[boidId] then
 		return
 	end
@@ -624,12 +624,12 @@ end
 
 -- Server snapshots feed this client-only target. The Actor worker blends it
 -- into normal steering; storage is never snapped or overwritten from network.
-function Boids.SetReconciliationTargets(targets: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}})
+function Boids.SetReconciliationTargets(targets: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}}): ()
 	if not RunService:IsClient() or #targets == 0 then return end
 	if RuntimeMetrics.State.mode == "detailed" then
 		RuntimeMetrics.Add(RuntimeMetrics.State, "correctionMessages", #ActorsInitializer.actors)
 	end
-	local liveTargets = {}
+	local liveTargets: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number}} = {}
 	for _, target in targets do
 		local lifetime = boidLifetimes[target.boidId]
 		if lifetime and not pendingDeletionIds[target.boidId] then
@@ -641,7 +641,7 @@ function Boids.SetReconciliationTargets(targets: {{boidId: number, position: Vec
 	end
 end
 
-function Boids.SetReconciliationTarget(boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number)
+function Boids.SetReconciliationTarget(boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number): ()
 	Boids.SetReconciliationTargets({ { boidId = boidId, position = position, velocity = velocity, snapshotTime = snapshotTime } })
 end
 
@@ -719,13 +719,14 @@ function Boids.GetObstacleObservation(): SharedTypes.ObstacleObservation?
 	return ResultCommit.GetObstacleObservation()
 end
 
-local function observePosition(value: any): Vector3?
+local function observePosition(value: Vector3 | SharedTypes.Target | nil): Vector3?
 	if typeof(value) == "Vector3" then return value end
 	if typeof(value) == "Instance" then
-		if value:IsA("BasePart") and value:IsDescendantOf(workspace) then return value.Position end
+		local part: BasePart = value :: BasePart
+		if part:IsA("BasePart") and part:IsDescendantOf(workspace) then return part.Position end
 		return nil
 	end
-	if type(value) == "table" then return observePosition(value.Position) end
+	if type(value) == "table" then return observePosition((value :: {Position: Vector3 | BasePart}).Position) end
 	return nil
 end
 
@@ -767,7 +768,7 @@ function Boids.GetBoidModel(boidId: number): BoidModel?
 	return boidModelById[boidId]
 end
 
-function Boids.ForEachBoid(observer: (boidId: number, position: Vector3, model: BoidModel) -> ())
+function Boids.ForEachBoid(observer: (boidId: number, position: Vector3, model: BoidModel) -> ()): ()
 	for boidId, model in boidModelById do
 		local position = select(1, Boids.GetBoidState(boidId))
 		if position then
@@ -776,7 +777,7 @@ function Boids.ForEachBoid(observer: (boidId: number, position: Vector3, model: 
 	end
 end
 
-function broadcastDeletedBoids(boidIds: {number})
+function broadcastDeletedBoids(boidIds: {number}): ()
 	if #boidIds == 0 then return end
 	local lifetimes: {[number]: number} = {}
 	local removed: {[number]: boolean} = {}
@@ -814,7 +815,7 @@ function broadcastDeletedBoids(boidIds: {number})
 	end
 end
 
-local function flushQueuedDeletions()
+local function flushQueuedDeletions(): ()
 	for group in retiringGroups do
 		if not hasCommittingJob(group) then finishDestroyedGroup(group) end
 	end

@@ -42,10 +42,13 @@ function Registry.StartServerScenario(scenarioName: string, boids: BoidsApi, pla
 	local boidIds: {number} = {}
 	local context: ScenarioContext = { name = scenario.name, serverGroups = {} }
 	if spawnServerGroups then
-		local serverGroups = scenario.serverGroups
-		if type(serverGroups) == "function" then
+		local groupSource = scenario.serverGroups
+		local serverGroups: {ScenarioTypes.GroupDefinition}
+		if type(groupSource) == "function" then
 			assert(player, `Scenario {scenarioName} requires a player target`)
-			serverGroups = serverGroups(player)
+			serverGroups = groupSource(player)
+		else
+			serverGroups = groupSource
 		end
 
 		for index, spawned in ScenarioRuntime.SpawnGroups(boids, serverGroups) do

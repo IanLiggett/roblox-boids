@@ -13,6 +13,7 @@ return function(): Result
 	assert(RunService:IsClient(), "Run handoff verification in the client runtime")
 	local player = Players.LocalPlayer
 	local boidsClient = player:WaitForChild("PlayerScripts"):WaitForChild("BoidsClient")
+		:: typeof(game.StarterPlayer.StarterPlayerScripts.BoidsClient)
 	local handoff = require(boidsClient.Scenarios.Observation.Handoff)
 	local camera = workspace.CurrentCamera :: Camera
 	local original = camera.CFrame

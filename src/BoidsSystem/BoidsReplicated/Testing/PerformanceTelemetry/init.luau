@@ -123,7 +123,12 @@ local function networkKbps(name: string): number?
 	local ok, value = pcall(function()
 		-- ServerStatsItem is the network summary exposed in both Studio server and
 		-- client contexts; its values are directional for the current process.
-		local item = Stats.Network.ServerStatsItem:FindFirstChild(name)
+		local networkStats = Stats :: Stats & {Network: Instance & {ServerStatsItem: Instance}}
+		-- StatsItem:GetValue is present at runtime but omitted by the engine's
+		-- public API definitions. Keep the hidden capability at this read boundary.
+		local item = networkStats.Network.ServerStatsItem:FindFirstChild(name) :: (StatsItem & {
+			GetValue: (StatsItem) -> number,
+		})?
 		return item and item:GetValue()
 	end)
 	return if ok and type(value) == "number" then value else nil
@@ -182,8 +187,9 @@ function PerformanceTelemetry.Start(
 				table.insert(receiveSamples, receive)
 			end
 
-			if divergenceProvider then
-				local divergence = divergenceProvider()
+			local readDivergence: (() -> DivergenceSample?)? = divergenceProvider
+			if readDivergence then
+				local divergence = readDivergence()
 				if divergence then
 					local count = divergence.sampleCount
 					divergenceSampleCount += count
@@ -246,7 +252,7 @@ function PerformanceTelemetry.Start(
 			isStudio = RunService:IsStudio(), warmupSeconds = warmupSeconds,
 			requestedSampleSeconds = sampleSeconds,
 			nativeStatus = "unverified; --!native is not execution evidence",
-			sourceRevision = script:GetAttribute("MeasurementRevision") or "unrecorded",
+			sourceRevision = (script:GetAttribute("MeasurementRevision") :: string?) or "unrecorded",
 			latencyPolicy = "last N events within sample interval; nearest-rank quantiles",
 			latencyCapacity = endMetrics.latencyCapacity,
 		}
@@ -286,8 +292,11 @@ function PerformanceTelemetry.Start(
 		reports[key] = report
 		-- Tool/plugin VMs have separate require caches. Export the actual runtime report.
 		local reportName = "Report_" .. environment
-		local record = script:FindFirstChild(reportName) :: StringValue?
-		if not record then
+		local existingRecord: StringValue? = script:FindFirstChild(reportName) :: StringValue?
+		local record: StringValue
+		if existingRecord then
+			record = existingRecord
+		else
 			record = Instance.new("StringValue")
 			record.Name = reportName
 			record.Parent = script

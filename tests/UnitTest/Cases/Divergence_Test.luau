@@ -1,5 +1,7 @@
 --!strict
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
  local Divergence = require(game.ReplicatedStorage.BoidsReplicated.Testing.PerformanceTelemetry.Divergence)
  t.test("divergence time-aligns fresh accepted corrections without changing state", function()
   local reads = 0

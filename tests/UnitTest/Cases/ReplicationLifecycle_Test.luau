@@ -1,11 +1,22 @@
 --!strict
 
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
 	local package = game.ReplicatedStorage.BoidsReplicated
 	local network = require(package.NetworkResults)
 	local intakeModule = require(package.SimulationReplication.CorrectionIntake)
 	local replay = require(package.SimulationReplication.Replay)
 	local bootstrapModule = require(package.SimulationReplication.Bootstrap)
+	type Correction = {boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}
+	type PlayerDouble = {Parent: Players?}
+	type AdmissionDouble = {Request: (PlayerDouble, number) -> boolean, Forget: (PlayerDouble) -> ()}
+
+	-- Admission uses only connection identity and Parent. The test keeps that
+	-- structural double separate from the engine's nominal Player type.
+	local function admission(sendState: () -> ()): AdmissionDouble
+		return (bootstrapModule.New(function(_player: Player): () sendState() end) :: unknown) :: AdmissionDouble
+	end
 
 	local function packet(id: number): buffer
 		local cell = network.NewCellSnapshot(1, Vector3.zero)
@@ -15,11 +26,11 @@ return function(t: any): ()
 
 	t.test("correction freshness, live lifetime and malformed packet rejection", function()
 		local live, deleting = true, false
-		local received: {any} = {}
+		local received: {Correction} = {}
 		local intake = intakeModule.New({
 			IsServerBoid = function(): boolean return live end,
 			IsDeletionPending = function(): boolean return deleting end,
-			SetReconciliationTargets = function(rows: {any}): () for _, row in rows do table.insert(received, row) end end,
+			SetReconciliationTargets = function(rows: {Correction}): () for _, row in rows do table.insert(received, row) end end,
 		})
 		local data = packet(7)
 		intake.Consume(data, 10)
@@ -59,7 +70,7 @@ return function(t: any): ()
 		local intake = intakeModule.New({
 			IsServerBoid = function(): boolean return true end,
 			IsDeletionPending = function(): boolean return false end,
-			SetReconciliationTargets = function(rows: {any}): () calls += #rows end,
+			SetReconciliationTargets = function(rows: {Correction}): () calls += #rows end,
 		})
 		intake.Consume(network.ConvertSimulationSnapshotToPackets({cell})[1], 1)
 		t.expect.equal(calls, 1)
@@ -71,7 +82,7 @@ return function(t: any): ()
 		local intake = intakeModule.New({
 			IsServerBoid = function(): boolean return isServer end,
 			IsDeletionPending = function(): boolean return false end,
-			SetReconciliationTargets = function(rows: {any}): () calls += #rows end,
+			SetReconciliationTargets = function(rows: {Correction}): () calls += #rows end,
 		})
 		intake.Consume(packet(0), 1)
 		intake.Consume(packet(65535), 1)
@@ -86,8 +97,8 @@ return function(t: any): ()
 	end)
 
 	t.test("replay uses settled pose, preserves recipes and excludes retired state", function()
-		local recipe: any = {id=1, position=Vector3.zero, velocity=Vector3.zero, maxSpeed=20, model=0}
-		local records = replay.CopyBoids({[1]=recipe, [2]=table.clone(recipe)}, function(id: number): (Vector3?, Vector3?)
+		local recipe: {id: number, position: Vector3, velocity: Vector3, maxSpeed: number, model: number} = {id=1, position=Vector3.zero, velocity=Vector3.zero, maxSpeed=20, model=0}
+		local records = replay.CopyBoids({[1]=recipe :: replay.BoidSpawnRecord, [2]=table.clone(recipe) :: replay.BoidSpawnRecord}, function(id: number): (Vector3?, Vector3?)
 			if id == 2 then return nil, nil end
 			return Vector3.new(100, 20, 30), Vector3.xAxis * 10
 		end)
@@ -100,10 +111,10 @@ return function(t: any): ()
 	end)
 
 	t.test("bootstrap admits one successful replay and suppresses reentrant/duplicate requests", function()
-		local player: any = {Parent=game:GetService("Players")}
+		local player: PlayerDouble = {Parent=game:GetService("Players")}
 		local count = 0
-		local bootstrap: any
-		bootstrap = bootstrapModule.New(function(): ()
+		local bootstrap: AdmissionDouble
+		bootstrap = admission(function(): ()
 			count += 1
 			t.expect.falsy(bootstrap.Request(player, 100))
 		end)
@@ -113,15 +124,15 @@ return function(t: any): ()
 		bootstrap.Forget(player)
 		player.Parent = nil
 		t.expect.falsy(bootstrap.Request(player, 200))
-		local replacement: any = {Parent=game:GetService("Players")}
+		local replacement: PlayerDouble = {Parent=game:GetService("Players")}
 		t.expect.truthy(bootstrap.Request(replacement, 200))
 		t.expect.equal(count, 2)
 	end)
 
 	t.test("failed bootstrap retries have a cooldown and a finite connection budget", function()
 		local count = 0
-		local player: any = {Parent=game:GetService("Players")}
-		local bootstrap = bootstrapModule.New(function(): () count += 1; error("expected injected bootstrap failure") end)
+		local player: PlayerDouble = {Parent=game:GetService("Players")}
+		local bootstrap: AdmissionDouble = admission(function(): () count += 1; error("expected injected bootstrap failure") end)
 		bootstrap.Request(player, 10)
 		bootstrap.Request(player, 11)
 		t.expect.equal(count, 1)

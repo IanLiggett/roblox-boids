@@ -1,5 +1,7 @@
 --!strict
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
 	local codec = require(game.ReplicatedStorage.BoidsReplicated.Boids.StatsCodec)
 	t.test("round trips the canonical 16 byte stats row", function()
 		local data = buffer.create(codec.ROW_BYTES)

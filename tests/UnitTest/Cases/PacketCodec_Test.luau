@@ -1,5 +1,7 @@
 --!strict
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
  local package = game.ReplicatedStorage.BoidsReplicated
  local codec = require(package.NetworkResults.PacketCodec)
  t.test("packet splitting copies only used canonical rows and preserves signed origins", function()

@@ -41,7 +41,7 @@ local packetTokens: number = MAX_PACKET_TOKENS
 
 local MAX_PACKET_AGE: number = 1 / 4
 
-local function estimateCellSnapshotBytes(cellSnapshot: CellSnapshot)
+local function estimateCellSnapshotBytes(cellSnapshot: CellSnapshot): number
 	return CELL_HEADER_BYTES + cellSnapshot.boidCount * BOID_ROW_BYTES
 end
 
@@ -65,7 +65,7 @@ local function getOrCreateAccumulator(userId: number): PlayerPacketAccumulator
 	return state
 end
 
-local function clearAccumulator(state: PlayerPacketAccumulator)
+local function clearAccumulator(state: PlayerPacketAccumulator): ()
 	table.clear(state.chunks)
 
 	state.oldestPendingTime = nil
@@ -88,7 +88,7 @@ local function shouldFlushPlayer(state: PlayerPacketAccumulator, now: number): b
 	return false
 end
 
-local function enqueueChunk(playerState: PlayerPacketAccumulator, cellId: number, cellSnapshot: CellSnapshot, now: number)
+local function enqueueChunk(playerState: PlayerPacketAccumulator, cellId: number, cellSnapshot: CellSnapshot, now: number): ()
 	if cellSnapshot.boidCount <= 0 then
 		return
 	end
@@ -107,7 +107,7 @@ local function enqueueChunk(playerState: PlayerPacketAccumulator, cellId: number
 	playerState.estimatedBytes += estimateCellSnapshotBytes(cellSnapshot)
 end
 
-local function flushPlayer(userId: number, state: PlayerPacketAccumulator)
+local function flushPlayer(userId: number, state: PlayerPacketAccumulator): ()
 	if #state.chunks <= 0 then
 		clearAccumulator(state)
 		return
@@ -189,7 +189,7 @@ function ServerTransport.DiscardBoids(removed: {[number]: boolean}): ()
 	end
 end
 
-function ServerTransport.EnqueueSimulationSnapshotForPlayers(players: {number}, simulationSnapshot: SimulationSnapshot, now: number)
+function ServerTransport.EnqueueSimulationSnapshotForPlayers(players: {number}, simulationSnapshot: SimulationSnapshot, now: number): ()
 	for _, userId: number in players do
 		if not Players:GetPlayerByUserId(userId) then continue end
 		local state = getOrCreateAccumulator(userId)
@@ -204,10 +204,10 @@ local serverStarted = false
 function ServerTransport.StartServer(): ()
 	if not RunService:IsServer() or serverStarted then return end
 	serverStarted = true
-	Players.PlayerRemoving:Connect(function(player: Player)
+	Players.PlayerRemoving:Connect(function(player: Player): ()
 		playerAccumulators[player.UserId] = nil
 	end)
-	RunService.PostSimulation:Connect(function(dt: number)
+	RunService.PostSimulation:Connect(function(dt: number): ()
 		packetTokens = math.min(
 			MAX_PACKET_TOKENS,
 			packetTokens + TARGET_REMOTE_CALLS_PER_SECOND * dt

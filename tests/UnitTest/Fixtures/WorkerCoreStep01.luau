@@ -14,25 +14,58 @@ Runtime Message API:
 	NewGroupPath(groupId, path, pathId, switchToClosestNode, loops): caches a complete group path
 ]]
 
-local package = game.ReplicatedStorage.BoidsReplicated
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local package = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+ :: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local SharedTypes = require(package.SharedTypes)
+export type RaycastHit = {Distance: number, Normal: Vector3?, Position: Vector3?, Instance: BasePart?}
+export type RaycastProvider = (Vector3, Vector3) -> RaycastHit?
+export type Pages = {id: number?, pages: {SharedTypes.Page}, pageCount: number, openPages: {[number]: boolean}, pendingPages: {[number]: boolean}}
+export type Cell = {
+ id: number, origin: Vector3, networkTick: number, networkInterval: number, emitSnapshot: boolean,
+ pages: Pages, pageCount: number, scheduledBoidCount: number, processedBoidCount: number, boidCount: number,
+}
+export type Input = {
+ id: number?, groupId: number, usesPath: boolean, jobCells: {Cell}, averageSight: number, detailedMetrics: boolean,
+ movedBoids: {[number]: {number | Vector3}}, cellCount: number?, startTime: number?, completionTime: number?, estimatedCost: number?,
+}
+export type Result = {
+ jobCells: {Cell}, measurement: SharedTypes.WorkerMeasurement, snapshotGroups: SharedTypes.SnapshotGroupsBySourceCell,
+ movedBoids: {[number]: {number | Vector3}}, completionTime: number,
+}
+export type Reply = {Fire: (Reply, Result?, number?, string?) -> ()}
+export type MessageReconciliationTarget = {boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number}
+export type Handlers = {
+ NewJob: (Input, Reply, number, number) -> (),
+ NewBoidsStatsBatch: ({boidCount: number, data: buffer, lifetimes: {number}}) -> (),
+ NewGroupTarget: (number, SharedTypes.Target, number) -> (),
+ NewGroupPath: (number, {SharedTypes.PathNode}, number, boolean, boolean, number, number) -> (),
+ SetBoidReconciliationTargets: ({MessageReconciliationTarget}) -> (),
+}
+export type ActorDouble = {
+ BindToMessageParallel: (ActorDouble, string, unknown) -> (),
+ BindToMessage: (ActorDouble, string, unknown) -> (),
+}
+export type Core = {Start: (ActorDouble) -> (), SetTestRaycastProvider: (RaycastProvider?) -> ()}
 local Quantization = table.clone(require(package.Quantization))
 Quantization.CurrentSimTick = function(): number return 100 end
 local BoidStorage = require(package.BoidStorage)
 local StatsCodec = require(package.Boids.StatsCodec)
 local SnapshotCodec = require(package.SnapshotCodec)
+local ObstacleDiagnostics = require(package.Boids.ObstacleDiagnostics)
 local fakeClock = 0
 local os = {clock=function(): number fakeClock += 0.000001;return fakeClock end}
-local raycastProvider: ((Vector3, Vector3) -> any)? = nil
+local raycastProvider: RaycastProvider? = nil
 local workspace = {
  GetServerTimeNow=function(): number return 100/60 end,
- Raycast=function(_: any, origin: Vector3, direction: Vector3, _params: any): any
-  if raycastProvider then return raycastProvider(origin, direction) end
+ Raycast=function(_: unknown, origin: Vector3, direction: Vector3, _params: RaycastParams?): RaycastResult?
+  local readRaycast: RaycastProvider? = raycastProvider
+  if readRaycast then return readRaycast(origin, direction) :: RaycastResult? end
   return nil
  end,
 }
 local WorkerCore = {}
-function WorkerCore.SetTestRaycastProvider(provider: ((Vector3, Vector3) -> any)?): ()
+function WorkerCore.SetTestRaycastProvider(provider: RaycastProvider?): ()
  raycastProvider = provider
 end
 
@@ -154,28 +187,23 @@ local groupGravityWells: {[number]: {[number]: GravityWell}} = {}
 local globalBoidsStats:{[number]:BoidStats} = {}
 local pendingReconciliationTargets: {[number]: ReconciliationTarget} = {}
 
--- Actors handle one ready job at a time, so this scratch space can be reused
--- across cells and jobs without allocation or cross-job state.
-local cellScratch: CellScratch = {
-	ids = {},
-	positions = {},
-	velocities = {},
-	lastTicks = {},
-	pathNodes = {},
-	pathVersions = {},
-	pagesByIndex = {},
-	slotsByIndex = {},
-	bucketXs = {},
-	bucketYs = {},
-	bucketZs = {},
-	liveIndices = {},
-}
+-- Lifecycle tokens are process-local metadata, separate from packed simulation
+-- rows/codecs. Tombstones prevent delayed stats/control messages reviving caches.
+local retiredBoids: {[number]: number} = {}
+local statsLifetimes: {[number]: number} = {}
+local pendingTargetLifetimes: {[number]: number} = {}
+local groupLifetimes: {[number]: number} = {}
+local retiredGroups: {[number]: number} = {}
+local function acceptGroupLifetime(groupId: number, lifetime: number): boolean
+	if lifetime <= (retiredGroups[groupId] or -1) or lifetime < (groupLifetimes[groupId] or -1) then return false end
+	if groupLifetimes[groupId] ~= lifetime then
+		groupTargets[groupId], groupPaths[groupId], groupGravityWells[groupId] = nil, nil, nil
+		groupLifetimes[groupId] = lifetime
+	end
+	return true
+end
 
--- Actor-lifetime bucket scratch: active records are reset before being reused.
-local bucketRecordPool: {Bucket} = {}
-local activeBucketRecords: {Bucket} = {}
-
-local function clearBuckets(buckets: {[number]: Bucket}): ()
+local function clearBuckets(buckets: {[number]: Bucket}, activeBucketRecords: {Bucket}, bucketRecordPool: {Bucket}): ()
 	for i = 1, #activeBucketRecords do
 		local bucket = activeBucketRecords[i]
 		table.clear(bucket.liveIndices)
@@ -186,7 +214,7 @@ local function clearBuckets(buckets: {[number]: Bucket}): ()
 	table.clear(buckets)
 end
 
-local function acquireBucket(liveIndex: number, position: Vector3, velocity: Vector3): Bucket
+local function acquireBucket(liveIndex: number, position: Vector3, velocity: Vector3, activeBucketRecords: {Bucket}, bucketRecordPool: {Bucket}): Bucket
 	local bucket = bucketRecordPool[#bucketRecordPool]
 	if bucket then
 		bucketRecordPool[#bucketRecordPool] = nil
@@ -294,6 +322,7 @@ local OBSTACLE_REACTION_SECONDS = 2
 local OBSTACLE_LOOK_AHEAD_PADDING = 4
 local OBSTACLE_MAX_LOOK_AHEAD = 1024
 local OBSTACLE_CLEARANCE_MARGIN = 2
+-- The margin avoids treating packed-heading quantization noise as forward alignment.
 local OBSTACLE_CONTINUATION_DOT_THRESHOLD = 0.1
 local OBSTACLE_SOFT_ACCELERATION_SCALE = 0.75
 
@@ -317,7 +346,8 @@ local function findEscapeDirection(
 	goalDirection: Vector3,
 	committedDirection: Vector3?,
 	lookAhead: number,
-	requiredClearance: number
+	requiredClearance: number,
+	observation: SharedTypes.ObstacleObservation?
 ): (Vector3, number)
 	local tangentA = preferredDirection - normal * preferredDirection:Dot(normal)
 	local tangentAMagnitudeSq = tangentA:Dot(tangentA)
@@ -365,8 +395,24 @@ local function findEscapeDirection(
 			if score > bestScore then
 				bestScore = score
 				bestDirection = candidateDirection
+				if observation then observation.selectedCandidateIndex = candidateIndex end
 			end
 		end
+		if observation then
+			ObstacleDiagnostics.RecordProbe(observation, "Escape", worldPosition, candidateDirection * lookAhead, candidateHit, candidateIndex)
+			local isClear = clearance >= requiredClearance
+			table.insert(observation.candidates, {
+				index = candidateIndex, direction = candidateDirection, clearance = clearance,
+				requiredClearance = requiredClearance,
+				alignment = if committedDirection then candidateDirection:Dot(committedDirection) else nil,
+				canContinue = candidateContinues, isClear = isClear,
+				isEligible = isClear and candidateContinues,
+				score = if isClear and candidateContinues then score else nil, isSelected = false,
+			})
+		end
+	end
+	if observation and observation.selectedCandidateIndex then
+		observation.candidates[observation.selectedCandidateIndex].isSelected = true
 	end
 
 	return bestDirection, 4
@@ -379,7 +425,8 @@ local function getObstacleResponse(
 	speed: number,
 	dt: number,
 	preferredDirection: Vector3,
-	maxSpeed: number
+	maxSpeed: number,
+	observation: SharedTypes.ObstacleObservation?
 ): (Vector3, Vector3, number, number, boolean)
 	if speed <= 1e-4 or dt <= 0 then
 		return Vector3.zero, Vector3.zero, 0, 0, false
@@ -387,7 +434,9 @@ local function getObstacleResponse(
 
 	local lookAhead = getObstacleLookAhead(speed, dt)
 	local forwardHit = workspace:Raycast(worldPosition, velocity / speed * lookAhead, obstacleRaycastParams)
+	if observation then ObstacleDiagnostics.RecordProbe(observation, "Forward", worldPosition, velocity / speed * lookAhead, forwardHit, nil) end
 	if not forwardHit then
+		if observation then observation.reason = "ForwardClear" end
 		return Vector3.zero, Vector3.zero, 1, 0, false
 	end
 
@@ -399,12 +448,15 @@ local function getObstacleResponse(
 		preferredDirection,
 		nil,
 		lookAhead,
-		speed * dt + OBSTACLE_CLEARANCE_MARGIN
+		speed * dt + OBSTACLE_CLEARANCE_MARGIN,
+		observation
 	)
 	if escapeDirection:Dot(escapeDirection) > 1e-8 then
+		if observation then observation.reason = "DetourStarted" end
 		return Vector3.zero, escapeDirection, 1, escapeRays, false
 	end
 
+	if observation then observation.reason = "SoftFallback" end
 	local threat = math.clamp((lookAhead - forwardHit.Distance) / lookAhead, 0, 1)
 	return forwardHit.Normal * maxSpeed * OBSTACLE_SOFT_ACCELERATION_SCALE * threat,
 		Vector3.zero, 1, escapeRays, true
@@ -420,7 +472,7 @@ local function readData(data: buffer, slot: number): (number, Vector3, Vector3, 
 		BoidStorage.ReadPathVersion(data, slot)
 end
 
-local function writeNewData(data: buffer, slot: number, position: Vector3, velocity: Vector3, speed: number, currentTick: number, pathNode: number, pathVersion: number)
+local function writeNewData(data: buffer, slot: number, position: Vector3, velocity: Vector3, speed: number, currentTick: number, pathNode: number, pathVersion: number): ()
 	BoidStorage.WritePosition(data, slot, position.X, position.Y, position.Z)
 	BoidStorage.WriteVelocity(data, slot, velocity.X, velocity.Y, velocity.Z)
 	BoidStorage.WriteSpeed(data, slot, speed)
@@ -552,10 +604,40 @@ local function resolvePathNode(node: PathNode): Vector3
 	return resolvePositionSource(node) + node.offset
 end
 
-local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number, messageSentTime: number)
+local function newObstacleObservation(
+	request: SharedTypes.ObstacleCaptureRequest, groupId: number, cellId: number,
+	tick: number, capturedAt: number, position: Vector3, velocity: Vector3,
+	dt: number, preferredDirection: Vector3, committedDirection: Vector3
+): SharedTypes.ObstacleObservation
+	local speed = velocity.Magnitude
+	return {
+		boidId = request.boidId, groupId = groupId, cellId = cellId,
+		generation = request.generation, jobOrder = request.jobOrder,
+		simulationTick = tick, capturedAt = capturedAt, position = position,
+		incomingVelocity = velocity, speed = speed, dt = dt, targetDirection = preferredDirection,
+		lookAhead = getObstacleLookAhead(speed, dt),
+		requiredClearance = speed * dt + OBSTACLE_CLEARANCE_MARGIN,
+		continuationThreshold = OBSTACLE_CONTINUATION_DOT_THRESHOLD,
+		committedBefore = committedDirection, committedAfter = committedDirection,
+		reason = if dt <= 0 then "NotEvaluatedZeroDelta" elseif speed <= 1e-4 then "NotEvaluatedZeroSpeed" else "NotEvaluated",
+		softAcceleration = Vector3.zero, resultDirection = Vector3.zero, displacement = Vector3.zero,
+		probes = {}, candidates = {},
+	}
+end
+
+local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number, messageSentTime: number): ()
 	local executionStart = os.clock()
 	local jobReceiveTime = workspace:GetServerTimeNow() - messageSentTime
+	-- Scratch belongs to this invocation; only cells in this job reuse it.
+	local cellScratch: CellScratch = {
+		ids = {}, positions = {}, velocities = {}, lastTicks = {}, pathNodes = {}, pathVersions = {},
+		pagesByIndex = {}, slotsByIndex = {}, bucketXs = {}, bucketYs = {}, bucketZs = {}, liveIndices = {},
+	}
+	local bucketRecordPool: {Bucket} = {}
+	local activeBucketRecords: {Bucket} = {}
 	local detailedMetrics = job.detailedMetrics
+	local obstacleRequest = job.obstacleRequest
+	local observedBoidId = if obstacleRequest then obstacleRequest.boidId else nil
 	local measurement: SharedTypes.WorkerMeasurement = {
 		detailed = detailedMetrics,
 		executionMs = 0,
@@ -689,7 +771,7 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 		isBucketting = jobCell.boidCount > MAX_SEEN
 		
 		if isBucketting then
-			clearBuckets(buckets)
+			clearBuckets(buckets, activeBucketRecords, bucketRecordPool)
 		end
 		
 		cellBoidCount = jobCell.boidCount
@@ -755,7 +837,7 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 			
 			local bucket: Bucket
 			local bitIndex: number, boidIndex: number
-			for baseSlot: number, liveMask: number in BoidStorage.LiveWords(page) :: () -> (number, number) do
+			for baseSlot: number, liveMask: number in (BoidStorage.LiveWords(page)) do
 				while liveMask ~= 0 do
 					bitIndex = bit32.countrz(liveMask)
 					boidIndex = baseSlot + bitIndex
@@ -795,7 +877,7 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 
 					bucket = buckets[bucketKey]
 					if not bucket then
-							bucket = acquireBucket(nextLiveIndex, position, velocity)
+							bucket = acquireBucket(nextLiveIndex, position, velocity, activeBucketRecords, bucketRecordPool)
 						buckets[bucketKey] = bucket
 
 						continue
@@ -823,6 +905,12 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 
 			boidStats = globalBoidsStats[boidId]
 			if not boidStats then
+				if obstacleRequest and boidId == observedBoidId then
+					local skipped = newObstacleObservation(obstacleRequest, job.groupId, jobCell.id, currentTick, jobTime,
+						origin + position, velocity, 0, Vector3.zero, BoidStorage.ReadObstacleDirection(page.data, boidIndex))
+					skipped.reason = "NotEvaluatedMissingStats"
+					job.obstacleObservation = skipped
+				end
 				measurement.skippedBoids += 1
 				continue
 			end
@@ -1017,6 +1105,11 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 			local rejoiningPath = false
 			obstacleDirection = BoidStorage.ReadObstacleDirection(page.data, boidIndex)
 			local hadObstacleDetour = obstacleDirection:Dot(obstacleDirection) > 1e-8
+			local observation: SharedTypes.ObstacleObservation? = nil
+			if obstacleRequest and boidId == observedBoidId then
+				observation = newObstacleObservation(obstacleRequest, job.groupId, jobCell.id, currentTick, jobTime,
+					worldPosition, velocity, dt, preferredObstacleDirection, obstacleDirection)
+			end
 
 			if dt > 0 and speed > 1e-4 and hadObstacleDetour then
 				local lookAhead = getObstacleLookAhead(speed, dt)
@@ -1027,13 +1120,24 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 				local targetHit = if targetRay:Dot(targetRay) > 1e-8
 					then workspace:Raycast(worldPosition, targetRay, obstacleRaycastParams)
 					else nil
+				if observation and targetRay:Dot(targetRay) > 1e-8 then
+					ObstacleDiagnostics.RecordProbe(observation, "Target", worldPosition, targetRay, targetHit, nil)
+				end
 				-- A distant hit is unrelated to this local detour; resume normal path steering.
 				if not targetHit or targetHit.Distance > lookAhead then
 					BoidStorage.WriteObstacleDirection(page.data, boidIndex, Vector3.zero)
 					obstacleDirection = Vector3.zero
+					if observation then
+						observation.reason = if targetRay:Dot(targetRay) <= 1e-8 then "ReleasedNoTargetRay"
+							elseif not targetHit then "ReleasedTargetClear" else "ReleasedBeyondHorizon"
+					end
 					rejoiningPath = toTarget:Dot(toTarget) > 1e-8
 				else
 					local headingHit = workspace:Raycast(worldPosition, obstacleDirection * lookAhead, obstacleRaycastParams)
+					if observation then
+						ObstacleDiagnostics.RecordProbe(observation, "Heading", worldPosition, obstacleDirection * lookAhead, headingHit, nil)
+						observation.reason = if headingHit then "DetourDistantHit" else "DetourHeadingClear"
+					end
 					obstacleForwardRays = 1
 					local requiredClearance = speed * dt + OBSTACLE_CLEARANCE_MARGIN
 					if headingHit and headingHit.Distance <= requiredClearance then
@@ -1045,13 +1149,16 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 							preferredObstacleDirection,
 							obstacleDirection,
 							lookAhead,
-							requiredClearance
+							requiredClearance,
+							observation
 						)
 						obstacleEscapeRays = escapeRays
 						if escapeDirection:Dot(escapeDirection) > 1e-8 then
+							if observation then observation.reason = "DetourChanged" end
 							obstacleDirection = escapeDirection
 							BoidStorage.WriteObstacleDirection(page.data, boidIndex, obstacleDirection)
 						end
+						if observation and escapeDirection:Dot(escapeDirection) <= 1e-8 then observation.reason = "RetainedHeadingFallback" end
 						-- If no safe forward candidate exists, retain the committed heading
 						-- and allow best-effort movement instead of reversing along the wall.
 						obstacleDetourUpdated = true
@@ -1071,7 +1178,8 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 					speed,
 					dt,
 					preferredObstacleDirection,
-					maxSpeed
+					maxSpeed,
+					observation
 				)
 				if obstacleDirection:Dot(obstacleDirection) > 1e-8 then
 					BoidStorage.WriteObstacleDirection(page.data, boidIndex, obstacleDirection)
@@ -1125,6 +1233,13 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 				velocity = velocity.Unit
 			end
 
+			if observation then
+				observation.committedAfter = obstacleDirection
+				observation.softAcceleration = obstacleAcceleration
+				observation.resultDirection = velocity
+				observation.displacement = velocity * speed * dt
+				job.obstacleObservation = observation
+			end
 			position += velocity * speed * dt
 			x, y, z = position.X, position.Y, position.Z
 			if  x < 0 or x >= CELL_SIZE
@@ -1218,55 +1333,78 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 	bindableEvent:Fire(job, jobReceiveTime)
 end
 
-function WorkerCore.Start(actor: Actor)
+function WorkerCore.Start(actor: ActorDouble): ()
 
-actor:BindToMessageParallel("NewJob", runJob)
+actor:BindToMessageParallel("NewJob", function(job: Job, reply: BindableEvent, frameTick: number, sentTime: number): ()
+	-- Both success and failure acknowledge completion only after all scratch access
+	-- ends. The coordinator retains this reply even when it rejects late results.
+	local ok, err = pcall(runJob, job, reply, frameTick, sentTime)
+	if not ok then
+		warn("Boids WorkerCore job failed: " .. tostring(err))
+		reply:Fire(nil, 0, tostring(err))
+	end
+end)
 
-actor:BindToMessageParallel("NewBoidsStatsBatch", function(batch:ActorBoidsBatch)
+actor:BindToMessage("NewBoidsStatsBatch", function(batch:ActorBoidsBatch): ()
 	local data: buffer = batch.data
 	
 	local boidId:number, maxSpeed:number, minSpeed:number, sight:number, avoidance:number, separation:number,  repulsion:number, repulsionStrength:number, alignment:number, cohesion:number, targetBias:number
 	for index: number = 0, batch.boidCount - 1 do
 		boidId, maxSpeed, minSpeed, sight, avoidance, separation, repulsion, repulsionStrength, alignment, cohesion, targetBias = StatsCodec.ReadBoidRow(data, index)
 		
-		local reconciliation = pendingReconciliationTargets[boidId] or {
+		local lifetime = assert(batch.lifetimes[index + 1], "Missing boid lifetime")
+		if lifetime <= (retiredBoids[boidId] or -1) or lifetime < (statsLifetimes[boidId] or -1) or lifetime < (pendingTargetLifetimes[boidId] or -1) then continue end
+		local pending = if pendingTargetLifetimes[boidId] == lifetime then pendingReconciliationTargets[boidId] else nil
+		local current = if statsLifetimes[boidId] == lifetime then globalBoidsStats[boidId] else nil
+		local reconciliation = pending or (if current then current.reconciliation else nil) or {
 			position = Vector3.zero,
 			velocity = Vector3.zero,
 			snapshotTime = 0,
 			expiresAt = 0,
 		}
-		pendingReconciliationTargets[boidId] = nil
+		pendingReconciliationTargets[boidId], pendingTargetLifetimes[boidId] = nil, nil
+		statsLifetimes[boidId] = lifetime
 
 		globalBoidsStats[boidId] = {
 			maxSpeed = maxSpeed,
 			minSpeed = minSpeed,
 			sight = sight,
 			avoidance = avoidance,
-			separation = separation / 255,
+			separation = (separation / 255),
 			repulsion = repulsion,
-			repulsionStrength = repulsionStrength,
-			alignment = alignment,
-			cohesion = cohesion,
-			targetBias = targetBias,
+			repulsionStrength = (repulsionStrength / 255),
+			alignment = (alignment / 255),
+			cohesion = (cohesion / 255),
+			targetBias = (targetBias / 255),
 			reconciliation = reconciliation,
 		}
 	end
 end)
 
-local function setReconciliationTarget(boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number): ()
-	local target: ReconciliationTarget = { position = position, velocity = velocity, snapshotTime = snapshotTime, expiresAt = snapshotTime + RECONCILIATION_EXPIRY_SECONDS }
+local function setReconciliationTarget(boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number): ()
+	if lifetime <= (retiredBoids[boidId] or -1) or lifetime < (statsLifetimes[boidId] or -1) or lifetime < (pendingTargetLifetimes[boidId] or -1) then return end
 	local boidStats = globalBoidsStats[boidId]
-	if boidStats then boidStats.reconciliation = target else pendingReconciliationTargets[boidId] = target end
+	local current = if boidStats and statsLifetimes[boidId] == lifetime then boidStats.reconciliation
+		elseif pendingTargetLifetimes[boidId] == lifetime then pendingReconciliationTargets[boidId] else nil
+	-- Preserve accepted ordering even if Actor controls arrive around stats setup.
+	if current and snapshotTime <= current.snapshotTime then return end
+	local target: ReconciliationTarget = { position = position, velocity = velocity, snapshotTime = snapshotTime, expiresAt = snapshotTime + RECONCILIATION_EXPIRY_SECONDS }
+	if boidStats and statsLifetimes[boidId] == lifetime then
+		boidStats.reconciliation = target
+	else
+		pendingReconciliationTargets[boidId], pendingTargetLifetimes[boidId] = target, lifetime
+	end
 end
 
 actor:BindToMessage("SetBoidReconciliationTarget", setReconciliationTarget)
-actor:BindToMessage("SetBoidReconciliationTargets", function(targets: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}})
+actor:BindToMessage("SetBoidReconciliationTargets", function(targets: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number}}): ()
 	for _, target in targets do
-		setReconciliationTarget(target.boidId, target.position, target.velocity, target.snapshotTime)
+		setReconciliationTarget(target.boidId, target.position, target.velocity, target.snapshotTime, target.lifetime)
 	end
 end)
 
-actor:BindToMessage("NewGroupTarget", function(groupId:number, target:Target)
+actor:BindToMessage("NewGroupTarget", function(groupId:number, target:Target, lifetime: number): ()
+	if not acceptGroupLifetime(groupId, lifetime) then return end
 	groupTargets[groupId] = target
 end)
 
@@ -1276,8 +1414,10 @@ actor:BindToMessage("NewGroupPath", function(
 	pathId: number,
 	switchToClosestNode: boolean,
 	loops: boolean,
-	pathArrivalRadius: number
-)
+	pathArrivalRadius: number,
+	lifetime: number
+): ()
+	if not acceptGroupLifetime(groupId, lifetime) then return end
 	groupPaths[groupId] = {
 		nodes = path,
 		id = pathId,
@@ -1287,15 +1427,16 @@ actor:BindToMessage("NewGroupPath", function(
 	}
 end)
 
-actor:BindToMessage("NewGlobalGravityWell", function(gravityWell: GravityWell)
+actor:BindToMessage("NewGlobalGravityWell", function(gravityWell: GravityWell): ()
 	globalGravityWells[gravityWell.id] = gravityWell
 end)
 
-actor:BindToMessage("RemoveGlobalGravityWell", function(gravityWellId: number)
+actor:BindToMessage("RemoveGlobalGravityWell", function(gravityWellId: number): ()
 	globalGravityWells[gravityWellId] = nil
 end)
 
-actor:BindToMessage("NewGroupGravityWell", function(groupId: number, gravityWell: GravityWell)
+actor:BindToMessage("NewGroupGravityWell", function(groupId: number, gravityWell: GravityWell, lifetime: number): ()
+	if not acceptGroupLifetime(groupId, lifetime) then return end
 	local wells = groupGravityWells[groupId]
 	if not wells then
 		wells = {}
@@ -1304,7 +1445,8 @@ actor:BindToMessage("NewGroupGravityWell", function(groupId: number, gravityWell
 	wells[gravityWell.id] = gravityWell
 end)
 
-actor:BindToMessage("RemoveGroupGravityWell", function(groupId: number, gravityWellId: number)
+actor:BindToMessage("RemoveGroupGravityWell", function(groupId: number, gravityWellId: number, lifetime: number): ()
+	if not acceptGroupLifetime(groupId, lifetime) then return end
 	local wells = groupGravityWells[groupId]
 	if not wells then
 		return
@@ -1315,8 +1457,24 @@ actor:BindToMessage("RemoveGroupGravityWell", function(groupId: number, gravityW
 	end
 end)
 
-actor:BindToMessage("ClearGroupGravityWells", function(groupId: number)
-	groupGravityWells[groupId] = nil
+actor:BindToMessage("RetireBoids", function(retirements: {{boidId: number, lifetime: number}}): ()
+	for _, retirement in retirements do
+		local id, lifetime = retirement.boidId, retirement.lifetime
+		retiredBoids[id] = math.max(retiredBoids[id] or -1, lifetime)
+		if (statsLifetimes[id] or -1) <= lifetime then
+			globalBoidsStats[id], statsLifetimes[id] = nil, nil
+		end
+		if (pendingTargetLifetimes[id] or -1) <= lifetime then
+			pendingReconciliationTargets[id], pendingTargetLifetimes[id] = nil, nil
+		end
+	end
+end)
+
+actor:BindToMessage("RetireGroup", function(groupId: number, lifetime: number): ()
+	retiredGroups[groupId] = math.max(retiredGroups[groupId] or -1, lifetime)
+	if (groupLifetimes[groupId] or -1) <= lifetime then
+		groupTargets[groupId], groupPaths[groupId], groupGravityWells[groupId], groupLifetimes[groupId] = nil, nil, nil, nil
+	end
 end)
 
 end

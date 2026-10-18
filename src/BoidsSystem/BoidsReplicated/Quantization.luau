@@ -94,7 +94,7 @@ Quantization.dequantizeVelocityAxis = dequantizeVelocityAxis
 
 
 -- Writes and quantizes to U8 a position local to its cell to the buffer
-function Quantization.WriteQuantizedPositionU8(buf:buffer, index:number, x:number, y:number, z:number)
+function Quantization.WriteQuantizedPositionU8(buf:buffer, index:number, x:number, y:number, z:number): ()
 	local offset:number = index * 3 * U8_SIZE
 	
 	buffer.writeu8(buf, offset, quantizePositionAxis(x, MAX_U8_INT))
@@ -102,7 +102,7 @@ function Quantization.WriteQuantizedPositionU8(buf:buffer, index:number, x:numbe
 	buffer.writeu8(buf, offset + U16_SIZE, quantizePositionAxis(z, MAX_U8_INT))
 end
 -- Writes and quantizes to U8 a normalized velocity to the buffer
-function Quantization.WriteQuantizedVelocityU8(buf:buffer, index:number, x:number, y:number, z:number, velocityMin:number, velocityRange:number)
+function Quantization.WriteQuantizedVelocityU8(buf:buffer, index:number, x:number, y:number, z:number, velocityMin:number, velocityRange:number): ()
 	local offset:number = index * 3 * U8_SIZE
 	
 	buffer.writeu8(buf, offset, quantizeVelocityAxis(x, velocityMin, velocityRange, MAX_U8_INT))
@@ -130,7 +130,7 @@ function Quantization.ReadQuantizedVelocityU8(buf:buffer, index:number, velocity
 end
 
 -- Writes and quantizes to U16 a position local to its cell to the buffer
-function Quantization.WriteQuantizedPositionU16(buf:buffer, index:number, x:number, y:number, z:number)
+function Quantization.WriteQuantizedPositionU16(buf:buffer, index:number, x:number, y:number, z:number): ()
 	local offset:number = index * 3 * U16_SIZE
 
 	buffer.writeu16(buf, offset, quantizePositionAxis(x, MAX_U16_INT))
@@ -138,7 +138,7 @@ function Quantization.WriteQuantizedPositionU16(buf:buffer, index:number, x:numb
 	buffer.writeu16(buf, offset + U32_SIZE, quantizePositionAxis(z, MAX_U16_INT))
 end
 -- Writes and quantizes to U16 a normalized velocity to the buffer
-function Quantization.WriteQuantizedVelocityU16(buf:buffer, index:number, x:number, y:number, z:number, velocityMin:number, velocityRange:number)
+function Quantization.WriteQuantizedVelocityU16(buf:buffer, index:number, x:number, y:number, z:number, velocityMin:number, velocityRange:number): ()
 	local offset:number = index * 3 * U16_SIZE
 
 	buffer.writeu16(buf, offset, quantizeVelocityAxis(x, velocityMin, velocityRange, MAX_U16_INT))
@@ -167,14 +167,14 @@ end
 
 
 
-function Quantization.ReadVector(buf:buffer, index:number)
+function Quantization.ReadVector(buf:buffer, index:number): (number, number, number)
 	return
 		buffer.readf64(buf, index * 8),
 		buffer.readf64(buf, index * 8 + 8),
 		buffer.readf64(buf, index * 8 + 8 * 2)
 end
 
-function Quantization.WriteVector(buf:buffer, x:number, y:number, z:number, index:number)
+function Quantization.WriteVector(buf:buffer, x:number, y:number, z:number, index:number): ()
 	buffer.writef64(buf, index * 8, x)
 	buffer.writef64(buf, index * 8 + 8, y)
 	buffer.writef64(buf, index * 8 + 8 * 2, z)
@@ -191,7 +191,7 @@ function Quantization.CurrentSimTick():number
 	return math.floor(workspace:GetServerTimeNow() * TICK_RATE) % U16_MOD
 end
 
-function Quantization.WriteLastTick(buf:buffer, index:number, tick:number)
+function Quantization.WriteLastTick(buf:buffer, index:number, tick:number): ()
 	buffer.writeu16(buf, index * 2, tick % U16_MOD)
 end
 

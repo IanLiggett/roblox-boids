@@ -1,5 +1,7 @@
 --!strict
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
 	local package = game.ReplicatedStorage.BoidsReplicated
 	local codec = require(package.SnapshotCodec)
 	local network = require(package.NetworkResults)
@@ -68,7 +70,8 @@ return function(t: any): ()
 			network.PublishSimulationSnapshot({}, time)
 			network.PublishSimulationSnapshot({[11] = empty}, time)
 			t.expect.equal(next(seen), nil)
-		end, debug.traceback)
+			return nil
+		end, function(problem: unknown): string return debug.traceback(tostring(problem)) end)
 		bridge.ConsumeCellSnapshot = oldConsume
 		network.ConvertSimulationSnapshotToPackets = oldConvert
 		assert(ok, failure)

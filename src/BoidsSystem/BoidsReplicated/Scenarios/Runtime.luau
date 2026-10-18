@@ -48,16 +48,16 @@ function Runtime.SpawnGroup(boids: BoidsApi, definition: GroupDefinition): Spawn
 			group,
 			position,
 			randomDirection(rng),
-			tuning.maxSpeed,
+			math.max(tuning.maxSpeed + rng:NextInteger(-10, 10), tuning.minSpeed + 1),
 			tuning.minSpeed,
-			tuning.sight,
-			tuning.avoidance,
-			tuning.separation,
+			math.max(tuning.sight + rng:NextInteger(-10, 10), 1),
+			math.max(tuning.avoidance + rng:NextInteger(-5, 5), 0),
+			math.max(tuning.separation + rng:NextInteger(-50, 50), 0),
 			tuning.repulsion,
 			tuning.repulsionStrength,
-			tuning.alignment,
-			tuning.cohesion,
-			tuning.targetBias,
+			math.max(tuning.alignment + rng:NextInteger(-20, 20), 1),
+			math.max(tuning.cohesion + rng:NextInteger(-20, 20), 1),
+			math.max(tuning.targetBias + rng:NextInteger(-20, 20), 1),
 			model
 		)
 		if boidId then
@@ -100,7 +100,7 @@ function Runtime.SpawnGroup(boids: BoidsApi, definition: GroupDefinition): Spawn
 end
 
 function Runtime.SpawnGroups(boids: BoidsApi, definitions: {GroupDefinition}): {SpawnedGroup}
-	local spawned = table.create(#definitions)
+	local spawned: {SpawnedGroup} = table.create(#definitions) :: {SpawnedGroup}
 	for index, definition in definitions do
 		spawned[index] = Runtime.SpawnGroup(boids, definition)
 	end

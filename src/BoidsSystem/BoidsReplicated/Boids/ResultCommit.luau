@@ -11,7 +11,7 @@ local ActorsInitializer = require(script.Parent.ActorsInitializer)
 local Schedulers = require(script.Parent.Scheduler)
 local Cells = require(script.Parent.Cells)
 local ViewerLOD = require(script.Parent.JobBuilder.ViewerLOD)
-local Benchmarkers = require(BoidsReplicated.Dependencies.Benchmarker.Value)
+local Benchmarkers = require(BoidsReplicated.Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
 local ResultCommit = {}
 local metrics = RuntimeMetrics.State
 local detailedMetrics = metrics.mode == "detailed"

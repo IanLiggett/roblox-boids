@@ -2,43 +2,66 @@
 -- Run from the package or host root: lune run <package>/tests/cli/VerifyDynamicIds.luau
 local fs = require("@lune/fs")
 local luau = require("@lune/luau")
-local roblox = require("@lune/roblox")
+local roblox = require("@lune/roblox") :: typeof(require("@lune/roblox")) & {Vector3: typeof(Vector3)}
 local task = require("@lune/task")
 local root = if fs.isDir("packages/BoidsSystem") then "packages/BoidsSystem/" else ""
 local base = root .. "src/BoidsSystem/BoidsReplicated/"
 local totals = {run = 0, passed = 0, failed = 0}
 local t = {expect = {}}
-function t.expect.equal(a, b) assert(a == b, `expected {b}, got {a}`) end
-function t.expect.truthy(a) assert(a, "expected truthy") end
-function t.expect.falsy(a) assert(not a, "expected falsy") end
-function t.test(name, fn)
+function t.expect.equal(a: unknown, b: unknown): () assert(a == b, `expected {b}, got {a}`) end
+function t.expect.truthy(a: unknown): () assert(a, "expected truthy") end
+function t.expect.falsy(a: unknown): () assert(not a, "expected falsy") end
+function t.test(name: string, fn: () -> ()): ()
 	totals.run += 1
 	local ok, err = pcall(fn)
 	if ok then totals.passed += 1; print("PASS", name)
 	else totals.failed += 1; warn("FAIL", name, err) end
 end
-local function load(path, environment)
+local function load(path: string, environment: {[string]: unknown}): unknown
+	-- Case modules import only the runner's exported test-context type. Its
+	-- value is inert in these isolated fixtures, whose require is identity.
+	if string.find(path, "/tests/UnitTest/Cases/", 1, true) then
+		environment.script = environment.script or {Parent = {Parent = {RunUnitTest = {}}}}
+	end
 	return luau.load(fs.readFile(path), {debugName = path, environment = environment, injectGlobals = true})()
 end
-local allocator = load(base .. "Boids/IdAllocator.luau", {})
+type AllocatorApi = typeof(require("../../src/BoidsSystem/BoidsReplicated/Boids/IdAllocator"))
+local allocator: AllocatorApi = load(base .. "Boids/IdAllocator.luau", {}) :: AllocatorApi
 local package = {Boids = {IdAllocator = allocator}}
-local function identity(value) return value end
-load(root .. "tests/UnitTest/Cases/IdAllocator_Test.luau", {
+local function identity<T>(value: T): T return value end
+local runAllocatorCases = load(root .. "tests/UnitTest/Cases/IdAllocator_Test.luau", {
 	game = {ReplicatedStorage = {BoidsReplicated = package}}, require = identity, task = task,
-})(t)
+}) :: (typeof(t)) -> ()
+runAllocatorCases(t)
 
 -- Load the unchanged production client intake against deterministic services.
-local function event()
-	local callbacks = {}
+type Callback = (...unknown) -> ()
+type Connection = {Disconnect: () -> ()}
+type Event = {Connect: (Event, Callback) -> Connection, Fire: (Event, ...unknown) -> ()}
+local function event(): Event
+	local callbacks: {Callback} = {}
 	return {
-		Connect = function(_, callback) table.insert(callbacks, callback); return {Disconnect = function() end} end,
-		Fire = function(_, ...) for _, callback in callbacks do callback(...) end end,
+		Connect = function(_self: Event, callback: Callback): Connection table.insert(callbacks, callback); return {Disconnect = function(): () end} end,
+		Fire = function(_self: Event, ...: unknown): () for _, callback in callbacks do callback(...) end end,
 	}
 end
 
-local function coordinatorFixture(isClient)
+type CoordinatorCell = {id: number, boidCount: number, pages: {}}
+type CoordinatorGroup = {id: number, activeCells: {[number]: CoordinatorCell}, cellCount: number,
+	scheduler: {schedulees: {[number]: {alreadyScheduled: boolean}}}}
+type CoordinatorApi = {
+	Start: () -> (), NewGroup: (number) -> CoordinatorGroup,
+	NewBoid: (CoordinatorGroup, Vector3, Vector3, number, number, number, number, number, number, number, number, number, number, number?, number?) -> number?,
+	IsServerBoid: (number) -> boolean, IsDeletionPending: (number) -> boolean, HasBoid: (number) -> boolean,
+	ReserveServerBoidId: (number) -> (), ReleaseServerBoidId: (number) -> (), QueueDeleteBoid: (number) -> (),
+	DestroyGroup: (CoordinatorGroup) -> (), SubscribeDeleted: (({number}) -> ()) -> (() -> ()),
+}
+type CoordinatorActor = {instance: {Parent: {SendMessage: Callback}}, execution: {group: CoordinatorGroup, phase: "completing"}?}
+type Storage = {BoidRegistry: {[number]: {cellId: number, pageId: number, slot: number}}, PageRegistry: {[number]: {data: buffer}}}
+
+local function coordinatorFixture(isClient: boolean)
 	local heartbeat = event()
-	local storage = {BoidRegistry = {}, PageRegistry = {[1] = {data = buffer.create(1)}}}
+	local storage: Storage = {BoidRegistry = {}, PageRegistry = {[1] = {data = buffer.create(1)}}}
 	local dependencies = {
 		SharedTypes = {BoidModels = {Boid = 0}},
 		Quantization = {GetNumericalKey = function() return 0 end, ConvertCoordsToGrid = function() return 0, 0, 0 end, CurrentSimTick = function() return 0 end},
@@ -46,42 +69,44 @@ local function coordinatorFixture(isClient)
 		RuntimeMetrics = {State = {}}, RuntimeConfig = {Resolve = function() return {actorCount = 0, targetActorJobMs = 4} end},
 		Dependencies = {Benchmarker = {Value = {newBenchmarker = function() return {} end}}},
 	}
-	local packets, serverDeletes = {}, 0
-	local function nothing() end
+	local packets: {number} = {}
+	local serverDeletes = 0
+	local function nothing(...: unknown): () end
 	local noops = setmetatable({}, {__index = function() return nothing end})
 	dependencies.NetworkResults = noops
 	dependencies.DebugPresentation = noops
 	dependencies.LODConfig = {}
-	dependencies.ClientRendererBridge = {ReceiveDeleteGroup = nothing, ReceiveDeleteBoidBatch = function(packet) table.insert(packets, buffer.readu16(packet, 0)) end}
+	dependencies.ClientRendererBridge = {ReceiveDeleteGroup = nothing, ReceiveDeleteBoidBatch = function(packet: buffer): () table.insert(packets, buffer.readu16(packet, 0)) end}
 	dependencies.SimulationReplication = setmetatable({ServerDeleteBoids = function() serverDeletes += 1 end}, {__index = function() return nothing end})
 	local cells = {WakeTime = nothing, IsDue = nothing}
-	function cells.AddBoid(group, cellId, _, _, id)
+	function cells.AddBoid(group: CoordinatorGroup, cellId: number, _position: Vector3, _velocity: Vector3, id: number): ()
 		storage.BoidRegistry[id] = {cellId = cellId, pageId = 1, slot = id}
-		local cell = group.activeCells[cellId]
-		if not cell then
-			cell = {id = cellId, boidCount = 0, pages = {}}
+		local existing: CoordinatorCell? = group.activeCells[cellId]
+		local cell: CoordinatorCell = existing or {id = cellId, boidCount = 0, pages = {}}
+		if not existing then
 			group.activeCells[cellId] = cell
 			group.cellCount += 1
 		end
 		cell.boidCount += 1
 	end
-	function cells.Remove(group, cell) group.activeCells[cell.id] = nil; group.cellCount -= 1 end
-	function storage.deleteBoidAtSlot() return true end
+	function cells.Remove(group: CoordinatorGroup, cell: CoordinatorCell): () group.activeCells[cell.id] = nil; group.cellCount -= 1 end
+	local storageApi = storage :: Storage & {deleteBoidAtSlot: () -> boolean}
+	function storageApi.deleteBoidAtSlot(): boolean return true end
 	local scheduler = {NewScheduler = function() return {schedulees = {}} end, RebuildSchedulerHeap = nothing}
 	local batches = setmetatable({NewBoidsStatsUpdate = function() return {} end}, {__index = function() return nothing end})
-	local actor = {instance = {Parent = {SendMessage = nothing}}}
+	local actor: CoordinatorActor = {instance = {Parent = {SendMessage = nothing}}}
 	local script = {Parent = dependencies, Scheduler = scheduler, BoidBatches = batches, JobBuilder = noops,
 		ActorsInitializer = {actors = {actor}, InitializeBoidActors = nothing, CancelGroup = nothing},
 		Diagnostics = {}, Cells = cells, IdAllocator = allocator, ResultCommit = {},
 	}
 	local service = {IsClient = function() return isClient end, IsServer = function() return not isClient end, Heartbeat = heartbeat}
-	local boids = load(base .. "Boids/init.luau", {script = script, require = identity,
+	local boids: CoordinatorApi = load(base .. "Boids/init.luau", {script = script, require = identity,
 		game = {GetService = function(_, name) return if name == "RunService" then service else {} end},
 		workspace = {GetServerTimeNow = function() return 100 end},
-	})
+	}) :: CoordinatorApi
 	boids.Start()
 	local group = boids.NewGroup(0)
-	local function spawn(id) return boids.NewBoid(group, roblox.Vector3.zero, roblox.Vector3.zero, 20, 3, 60, 35, 200, 0, 3, 100, 10, 50, nil, id) end
+	local function spawn(id: number?): number? return boids.NewBoid(group, roblox.Vector3.zero, roblox.Vector3.zero, 20, 3, 60, 35, 200, 0, 3, 100, 10, 50, nil, id) end
 	return {boids = boids, group = group, spawn = spawn, heartbeat = heartbeat, packets = packets, actor = actor,
 		serverDeletes = function() return serverDeletes end, storage = storage}
 end
@@ -165,35 +190,37 @@ end)
 local function fixture()
 	local heartbeat, incoming = event(), event()
 	local pool = allocator.New()
-	local live, pendingDeletion, holds = {}, {}, {}
+	local live: {[number]: "local" | "server"} = {}
+	local pendingDeletion: {[number]: boolean} = {}
+	local holds: {[number]: number} = {}
 	local deletions = 0
 	local boids = {}
-	function boids.HasBoid(id) return live[id] ~= nil end
-	function boids.IsServerBoid(id) return live[id] == "server" and not pendingDeletion[id] end
-	function boids.IsDeletionPending(id) return pendingDeletion[id] == true end
-	function boids.ReserveServerBoidId(id) holds[id] = (holds[id] or 0) + 1; allocator.Reserve(pool, id) end
-	function boids.ReleaseServerBoidId(id)
+	function boids.HasBoid(id: number): boolean return live[id] ~= nil end
+	function boids.IsServerBoid(id: number): boolean return live[id] == "server" and not pendingDeletion[id] end
+	function boids.IsDeletionPending(id: number): boolean return pendingDeletion[id] == true end
+	function boids.ReserveServerBoidId(id: number): () holds[id] = (holds[id] or 0) + 1; allocator.Reserve(pool, id) end
+	function boids.ReleaseServerBoidId(id: number): ()
 		assert(holds[id], "unbalanced reservation")
 		holds[id] -= 1
 		if holds[id] == 0 then holds[id] = nil; if not live[id] then allocator.Release(pool, id) end end
 	end
-	function boids.QueueDeleteBoid(id)
+	function boids.QueueDeleteBoid(id: number): ()
 		if live[id] and not pendingDeletion[id] then deletions += 1; pendingDeletion[id] = true end
 	end
-	function boids.NewGroup(_, id) return {id = id} end
-	function boids.NewBoid(_, _, _, _, _, _, _, _, _, _, _, _, _, _, id)
+	function boids.NewGroup(_model: number, id: number): {id: number} return {id = id} end
+	function boids.NewBoid(_group: {id: number}, _position: Vector3, _velocity: Vector3, _maxSpeed: number, _minSpeed: number, _sight: number, _avoidance: number, _separation: number, _repulsion: number, _repulsionStrength: number, _alignment: number, _cohesion: number, _targetBias: number, _model: number?, id: number): number
 		assert(not live[id] and not pendingDeletion[id], "overwrote live ID")
 		allocator.Reserve(pool, id); live[id] = "server"; return id
 	end
-	local groupRetiring = {}
-	function boids.IsGroupRetiring(id) return groupRetiring[id] == true end
-	function boids.DestroyGroup(group)
+	local groupRetiring: {[number]: boolean} = {}
+	function boids.IsGroupRetiring(id: number): boolean return groupRetiring[id] == true end
+	function boids.DestroyGroup(_group: {id: number}): ()
 		for id, owner in live do if owner == "server" then boids.QueueDeleteBoid(id) end end
 	end
-	function boids.SetReconciliationTargets() end
-	local retirements = {}
+	function boids.SetReconciliationTargets(...: unknown): () end
+	local retirements: {[number]: number} = {}
 	local correction = {New = function() return {
-		Retire = function(id, cutoff) retirements[id] = cutoff or 0 end,
+		Retire = function(id: number, cutoff: number?): () retirements[id] = cutoff or 0 end,
 		Consume = function() end,
 	} end}
 	local runService = {IsClient = function() return true end, IsServer = function() return false end, Heartbeat = heartbeat}
@@ -201,21 +228,22 @@ local function fixture()
 	local shared = {Remotes = remotes, SharedTypes = {}, NetworkResults = {}, RuntimeTypes = {}}
 	local script = {Parent = shared, CorrectionIntake = correction, Replay = {}, Bootstrap = {}}
 	local workspace = {DescendantAdded = event()}
-	local replication = load(base .. "SimulationReplication/init.luau", {
+	type ReplicationRuntime = {StartClient: (typeof(boids)) -> ()}
+	local replication: ReplicationRuntime = load(base .. "SimulationReplication/init.luau", {
 		script = script, require = identity, Vector3 = roblox.Vector3, workspace = workspace,
 		game = {GetService = function(_, name) return if name == "RunService" then runService else {} end},
-	})
+	}) :: ReplicationRuntime
 	replication.StartClient(boids)
-	local function spawn(group, ids)
+	local function spawn(group: number, ids: {number}): ()
 		local data = buffer.create(#ids * 37)
 		for row, id in ids do buffer.writeu16(data, (row - 1) * 37, id) end
 		incoming:Fire("Boids", group, data)
 	end
-	local function settle(id)
+	local function settle(id: number): ()
 		live[id], pendingDeletion[id] = nil, nil
 		if not holds[id] then allocator.Release(pool, id) end
 	end
-	local function localSpawn()
+	local function localSpawn(): number?
 		local id = allocator.Take(pool, true)
 		if id then live[id] = "local" end
 		return id
@@ -293,21 +321,23 @@ end)
 local hitStreamerPath = "src/StarterPlayer/StarterPlayerScripts/BoidHitStreamer.luau"
 if fs.isFile(hitStreamerPath) then
 	t.test("hit reports exclude locals, retired IDs and ownership changes; Stop disconnects", function()
-		local live = {[1] = true, [65535] = true}
-		local callbacks, packets = {}, {}
-		local deletion
+		local live: {[number]: boolean} = {[1] = true, [65535] = true}
+		local callbacks: {() -> ()} = {}
+		local packets: {buffer} = {}
+		local deletion: (({number}) -> ())?
 		local api = {
-			IsServerBoid = function(id) return live[id] == true end,
-			SubscribeDeleted = function(callback) deletion = callback; return function() deletion = nil end end,
+			IsServerBoid = function(id: number): boolean return live[id] == true end,
+			SubscribeDeleted = function(callback: ({number}) -> ()): () -> () deletion = callback; return function(): () deletion = nil end end,
 		}
-		local remote = {FireServer = function(_, packet) table.insert(packets, packet) end}
-		local function child(self, name) return self[name] end
+		local remote = {FireServer = function(_self: unknown, packet: buffer): () table.insert(packets, packet) end}
+		local function child(self: {[string]: unknown}, name: string): unknown return self[name] end
 		local shared = {WaitForChild = child, Boids = api, Remotes = {WaitForChild = child, ReportBoidHits = remote}}
 		local replicatedStorage = {WaitForChild = child, BoidsReplicated = shared}
-		local streamer = load(hitStreamerPath, {require = identity, Vector3 = roblox.Vector3,
+		type HitStreamer = {QueueHits: (number, Vector3, {{boidId: number}}, boolean?) -> (), Stop: () -> ()}
+		local streamer: HitStreamer = load(hitStreamerPath, {require = identity, Vector3 = roblox.Vector3,
 			game = {GetService = function() return replicatedStorage end},
-			task = {delay = function(_, callback) table.insert(callbacks, callback) end},
-		})
+			task = {delay = function(_seconds: number, callback: () -> ()): () table.insert(callbacks, callback) end},
+		}) :: HitStreamer
 		streamer.QueueHits(1, roblox.Vector3.zero, {{boidId = 42}})
 		t.expect.equal(#callbacks, 0)
 		streamer.QueueHits(1, roblox.Vector3.zero, {{boidId = 1}, {boidId = 65535}, {boidId = 42}})
@@ -316,7 +346,7 @@ if fs.isFile(hitStreamerPath) then
 		t.expect.equal(buffer.readu16(packets[1], 46), 1)
 		t.expect.equal(buffer.readu16(packets[1], 48), 65535)
 		streamer.QueueHits(1, roblox.Vector3.zero, {{boidId = 1}, {boidId = 65535}})
-		deletion({1})
+		assert(deletion)({1})
 		live[1], live[65535] = true, nil
 		callbacks[2]()
 		t.expect.equal(buffer.readu16(packets[2], 44), 0)

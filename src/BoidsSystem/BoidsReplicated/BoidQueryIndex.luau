@@ -75,7 +75,7 @@ local function cellKey(x: number, y: number, z: number): number
 	return Quantization.GetNumericalKey(x, y, z)
 end
 
-local function removeFromBucket(self: PrivateIndex, boidId: number, entry: Entry)
+local function removeFromBucket(self: PrivateIndex, boidId: number, entry: Entry): ()
 	local bucket = self.buckets[entry.cellKey]
 	if not bucket then
 		return
@@ -92,7 +92,7 @@ local function removeFromBucket(self: PrivateIndex, boidId: number, entry: Entry
 	end
 end
 
-local function insertIntoBucket(self: PrivateIndex, boidId: number, entry: Entry)
+local function insertIntoBucket(self: PrivateIndex, boidId: number, entry: Entry): ()
 	local bucket = self.buckets[entry.cellKey]
 	if not bucket then
 		bucket = { boidIds = {}, slotByBoidId = {} }
@@ -118,10 +118,10 @@ function BoidQueryIndex.new(): Index
 		queryCount = 0,
 		candidateCount = 0,
 		exactTestCount = 0,
-	}, Index) :: any
+	}, Index) :: Index
 end
 
-function Index.Update(self: PrivateIndex, boidId: number, position: Vector3, radius: number)
+function Index.Update(self: PrivateIndex, boidId: number, position: Vector3, radius: number): ()
 	if boidId % 1 ~= 0 or typeof(position) ~= "Vector3" or radius <= 0 then
 		return
 	end
@@ -147,7 +147,7 @@ function Index.Update(self: PrivateIndex, boidId: number, position: Vector3, rad
 	end
 end
 
-function Index.Remove(self: PrivateIndex, boidId: number)
+function Index.Remove(self: PrivateIndex, boidId: number): ()
 	local entry = self.entries[boidId]
 	if not entry then
 		return
@@ -179,7 +179,7 @@ local function beginQuery(self: PrivateIndex): number
 	return self.queryEpoch
 end
 
-local function recordQuery(self: PrivateIndex, startedAt: number, candidates: number, exactTests: number)
+local function recordQuery(self: PrivateIndex, startedAt: number, candidates: number, exactTests: number): ()
 	self.queryCount += 1
 	self.candidateCount += candidates
 	self.exactTestCount += exactTests
@@ -188,7 +188,7 @@ local function recordQuery(self: PrivateIndex, startedAt: number, candidates: nu
 	self.queryTimesMs[self.queryTimeCursor] = (os.clock() - startedAt) * 1000
 end
 
-local function visitBucket(self: PrivateIndex, x: number, y: number, z: number, epoch: number, visit: (number, Entry) -> ())
+local function visitBucket(self: PrivateIndex, x: number, y: number, z: number, epoch: number, visit: (number, Entry) -> ()): ()
 	local key = cellKey(x, y, z)
 	if self.seenEpochByCellKey[key] == epoch then
 		return
@@ -231,12 +231,12 @@ local function segmentIntersectsExpandedCell(origin: Vector3, direction: Vector3
 		and clip(origin.Z, direction.Z, minZ, maxZ)
 end
 
-local function visitSegmentCells(self: PrivateIndex, origin: Vector3, direction: Vector3, expansion: number, epoch: number, visit: (number, Entry) -> ())
+local function visitSegmentCells(self: PrivateIndex, origin: Vector3, direction: Vector3, expansion: number, epoch: number, visit: (number, Entry) -> ()): ()
 	local endPosition = origin + direction
 	local x, y, z = cellCoordinates(origin)
 	local endX, endY, endZ = cellCoordinates(endPosition)
 	local radiusCells = math.ceil(expansion / CELL_SIZE)
-	local function visitExpanded(baseX: number, baseY: number, baseZ: number)
+	local function visitExpanded(baseX: number, baseY: number, baseZ: number): ()
 		for offsetX = -radiusCells, radiusCells do
 			for offsetY = -radiusCells, radiusCells do
 				for offsetZ = -radiusCells, radiusCells do
@@ -367,7 +367,7 @@ end
 
 function Index.GetMetrics(self: PrivateIndex): Metrics
 	local count = self.querySampleCount
-	local samples = table.create(count)
+	local samples: {number} = table.create(count) :: {number}
 	for index = 1, count do
 		samples[index] = self.queryTimesMs[index]
 	end

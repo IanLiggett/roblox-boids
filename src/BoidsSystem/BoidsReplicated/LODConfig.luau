@@ -89,17 +89,17 @@ local presets: {[PresetName]: Config} = {
 		serverSimulation = {
 			nearDistance = 0,
 			farDistance = 512,
-			minIntervalMultiplier = 1,
-			maxIntervalMultiplier = 4,
+			minIntervalMultiplier = 0.2,
+			maxIntervalMultiplier = 1,
 			backgroundIntervalMultiplier = 4,
 		},
 		-- Tune predictive work against correction bandwidth independently.
 		clientPredictionSimulation = {
 			nearDistance = 0,
 			farDistance = 512,
-			minIntervalMultiplier = 1,
-			maxIntervalMultiplier = 4,
-			backgroundIntervalMultiplier = 12,
+			minIntervalMultiplier = 0.2,
+			maxIntervalMultiplier = 1,
+			backgroundIntervalMultiplier = 4,
 		},
 		-- Local-only scenarios never compete with prediction tuning.
 		clientLocalSimulation = {

@@ -1,6 +1,8 @@
 --!strict
 
-return function(t: any): ()
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
 	local allocator = require(game.ReplicatedStorage.BoidsReplicated.Boids.IdAllocator)
 
 	t.test("opposite ends, reservations and idempotent release", function()
