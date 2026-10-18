@@ -11,8 +11,8 @@ local Dock = {}
 
 export type Page = "Inspector" | "Camera" | "Session"
 export type Controller = {
-	Pages: {[Page]: ScrollingFrame},
-	Gui: ScreenGui,
+	pages: {[Page]: ScrollingFrame},
+	gui: ScreenGui,
 	Destroy: () -> (),
 }
 type Api = {
@@ -23,12 +23,12 @@ type Api = {
 	Open: () -> (),
 	Close: () -> (),
 }
-local BACKGROUND = Color3.fromRGB(24, 29, 37)
-local BUTTON = Color3.fromRGB(52, 67, 86)
-local FOREGROUND = Color3.fromRGB(235, 240, 247)
+local BACKGROUND: Color3 = Color3.fromRGB(24, 29, 37)
+local BUTTON: Color3 = Color3.fromRGB(52, 67, 86)
+local FOREGROUND: Color3 = Color3.fromRGB(235, 240, 247)
 
 function Dock.Start(observation: Api): Controller
-	local gui = Instance.new("ScreenGui")
+	local gui: ScreenGui = Instance.new("ScreenGui")
 	gui.Name = "BoidsObservation"
 	gui.ResetOnSpawn = false
 	gui.DisplayOrder = 51
@@ -37,7 +37,7 @@ function Dock.Start(observation: Api): Controller
 
 	local connections: {RBXScriptConnection} = {}
 	local function button(parent: Instance, name: string, text: string, callback: () -> ()): TextButton
-		local item = Instance.new("TextButton")
+		local item: TextButton = Instance.new("TextButton")
 		item.Name, item.Text = name, text
 		item.Font = Enum.Font.Code
 		item.TextSize = 12
@@ -46,12 +46,14 @@ function Dock.Start(observation: Api): Controller
 		item.BorderSizePixel = 0
 		item.Modal = true
 		item.Parent = parent
-		table.insert(connections, item.Activated:Connect(callback))
+		table.insert(connections, item.Activated:Connect(function(_input: InputObject, _clickCount: number): ()
+			callback()
+		end))
 		return item
 	end
 
 	-- Only the dock occupies a hit-testable rectangle; no full-screen frame blocks picking.
-	local shell = Instance.new("Frame")
+	local shell: Frame = Instance.new("Frame")
 	shell.Name = "Dock"
 	shell.AnchorPoint = Vector2.new(1, 0)
 	shell.Position = UDim2.new(1, -12, 0, 12)
@@ -61,10 +63,10 @@ function Dock.Start(observation: Api): Controller
 	shell.Active = true
 	shell.Visible = false
 	shell.Parent = gui
-	local constraint = Instance.new("UISizeConstraint")
+	local constraint: UISizeConstraint = Instance.new("UISizeConstraint")
 	constraint.Parent = shell
 
-	local tabs = Instance.new("Frame")
+	local tabs: Frame = Instance.new("Frame")
 	tabs.Name = "Tabs"
 	tabs.BackgroundTransparency = 1
 	tabs.Position = UDim2.fromOffset(8, 38)
@@ -79,7 +81,7 @@ function Dock.Start(observation: Api): Controller
 
 	local function render(): ()
 		if isDestroyed then return end
-		local state = observation.GetSessionState()
+		local state: ObservationTypes.SessionState = observation.GetSessionState()
 		local active = state.isActive and state.isAllowed
 		shell.Visible = active
 		constraint.MaxSize = Vector2.new(if collapsed then 320 else 420, 100000)
@@ -92,7 +94,7 @@ function Dock.Start(observation: Api): Controller
 		end
 	end
 	local function releasePageFocus(): ()
-		local focused = UserInputService:GetFocusedTextBox()
+		local focused: TextBox? = UserInputService:GetFocusedTextBox()
 		if focused and focused:IsDescendantOf(shell) then focused:ReleaseFocus(false) end
 	end
 	toggle = button(shell, "Toggle", "", function(): ()
@@ -102,10 +104,10 @@ function Dock.Start(observation: Api): Controller
 	end)
 	toggle.Position = UDim2.fromOffset(6, 3)
 	toggle.Size = UDim2.fromOffset(84, 26)
-	local exit = button(shell, "Exit", "Exit", observation.Close)
+	local exit: TextButton = button(shell, "Exit", "Exit", observation.Close)
 	exit.Position = UDim2.new(1, -56, 0, 3)
 	exit.Size = UDim2.fromOffset(50, 26)
-	local title = Instance.new("TextLabel")
+	local title: TextLabel = Instance.new("TextLabel")
 	title.Name = "Status"
 	title.BackgroundTransparency = 1
 	title.Position = UDim2.fromOffset(96, 3)
@@ -118,7 +120,7 @@ function Dock.Start(observation: Api): Controller
 
 	local names: {Page} = {"Inspector", "Camera", "Session"}
 	for index, name in names do
-		local page = Instance.new("ScrollingFrame")
+		local page: ScrollingFrame = Instance.new("ScrollingFrame")
 		page.Name = name
 		page.Position = UDim2.fromOffset(0, 72)
 		page.Size = UDim2.new(1, 0, 1, -72)
@@ -132,7 +134,7 @@ function Dock.Start(observation: Api): Controller
 		page.Visible = false
 		page.Parent = shell
 		pages[name] = page
-		local tab = button(tabs, name, if name == "Session" then "Session / LOD" else name, function(): ()
+		local tab: TextButton = button(tabs, name, if name == "Session" then "Session / LOD" else name, function(): ()
 			releasePageFocus()
 			selectedPage = name
 			render()
@@ -142,18 +144,18 @@ function Dock.Start(observation: Api): Controller
 		tabButtons[name] = tab
 	end
 
-	local launcher = button(gui, "Open", "Boids observer [F6]", observation.Open)
+	local launcher: TextButton = button(gui, "Open", "Boids observer [F6]", observation.Open)
 	launcher.AnchorPoint = Vector2.new(1, 0)
 	launcher.Position = UDim2.new(1, -12, 0, 12)
 	launcher.Size = UDim2.new(1, -24, 0, 32)
 	launcher.Modal = false
-	local launcherConstraint = Instance.new("UISizeConstraint")
+	local launcherConstraint: UISizeConstraint = Instance.new("UISizeConstraint")
 	launcherConstraint.MaxSize = Vector2.new(230, 32)
 	launcherConstraint.Parent = launcher
 	local function sync(): ()
-		local state = observation.GetSessionState()
+		local state: ObservationTypes.SessionState = observation.GetSessionState()
 		launcher.Visible = state.isAllowed and not state.isActive
-		local streaming = observation.GetStreamingStatus()
+		local streaming: Types.StreamingStatus = observation.GetStreamingStatus()
 		local needsAttention = (state.message ~= nil and state.message ~= "")
 			or streaming.needsAttention
 		local id = observation.GetSelectedBoidId()
@@ -164,7 +166,7 @@ function Dock.Start(observation: Api): Controller
 	end
 	table.insert(connections, UserInputService.InputBegan:Connect(function(input: InputObject, wasProcessed: boolean): ()
 		if wasProcessed or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() then return end
-		local state = observation.GetSessionState()
+		local state: ObservationTypes.SessionState = observation.GetSessionState()
 		if input.KeyCode == Enum.KeyCode.F6 then
 			if state.isActive then observation.Close()
 			elseif state.isAllowed then observation.Open() end
@@ -180,8 +182,8 @@ function Dock.Start(observation: Api): Controller
 	}
 	sync()
 	return {
-		Pages = pages,
-		Gui = gui,
+		pages = pages,
+		gui = gui,
 		Destroy = function(): ()
 			if isDestroyed then return end
 			isDestroyed = true

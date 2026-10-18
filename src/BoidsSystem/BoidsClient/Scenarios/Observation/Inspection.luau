@@ -17,16 +17,17 @@ export type GroupRow = {
 	groupId: number, name: string, ownership: "server" | "client", color: Color3,
 	renderedCount: number?, clientCount: number?,
 }
-export type Snapshot = {
+type Sample = {
 	selectedBoidId: number?, refreshedAt: number,
 	rendered: Renderer.RenderedBoidState?, client: ClientSample?, server: ObservationTypes.ServerSample?,
 	selectedGroupId: number?, groupColor: Color3?, group: SharedTypes.GroupObservation?,
-	obstacle: Obstacle.State,
 }
+export type Snapshot = Sample & { obstacle: Obstacle.State }
 export type Source = {
 	GetSelectedBoid: () -> number?, GetSelectedGroup: () -> number?,
 	GetServerSample: () -> ObservationTypes.ServerSample?,
 	GetBindings: () -> {ScenarioTypes.GroupBinding},
+	GetBinding: (number) -> ScenarioTypes.GroupBinding?,
 	GetGroupCount: (number) -> number?,
 	GetBoidObservation: (number) -> SharedTypes.BoidObservation?,
 	GetGroupObservation: (number) -> SharedTypes.GroupObservation?,
@@ -46,11 +47,11 @@ local nextRead, nextGroups = 0, 0
 local groupOverlayEnabled = false
 local seenGroups: {[number]: boolean} = {}
 local groups: {GroupRow} = {}
-local snapshot: Snapshot = { refreshedAt = 0, obstacle = Obstacle.GetState() }
+local snapshot: Sample = { refreshedAt = 0 }
 
 local function clearSnapshot(): ()
 	tracker, currentId = nil, nil
-	snapshot = { refreshedAt = 0, obstacle = Obstacle.GetState() }
+	snapshot = { refreshedAt = 0 }
 end
 
 local function refreshGroups(owner: Source): ()
@@ -73,7 +74,10 @@ end
 
 local function refresh(owner: Source, now: number): ()
 	local id = owner.GetSelectedBoid()
-	if id ~= currentId then tracker = nil currentId = id end
+	if id ~= currentId then
+		tracker = nil
+		currentId = id
+	end
 	local client: SharedTypes.BoidObservation? = if id then owner.GetBoidObservation(id) else nil
 	tracker = if client then Age.Observe(tracker, client) else nil
 	-- Availability/capture is feature work, independent of any GUI visibility or listeners.
@@ -81,9 +85,8 @@ local function refresh(owner: Source, now: number): ()
 	local selectedGroup = owner.GetSelectedGroup()
 	local color: Color3? = nil
 	if groupOverlayEnabled and selectedGroup ~= nil then
-		for _, binding in owner.GetBindings() do
-			if binding.groupId == selectedGroup then color = binding.definition.color break end
-		end
+		local binding: ScenarioTypes.GroupBinding? = owner.GetBinding(selectedGroup)
+		color = if binding then binding.definition.color else nil
 	end
 	snapshot = {
 		selectedBoidId = id, refreshedAt = now,
@@ -92,7 +95,6 @@ local function refresh(owner: Source, now: number): ()
 		server = owner.GetServerSample(),
 		selectedGroupId = selectedGroup, groupColor = color,
 		group = if groupOverlayEnabled and selectedGroup then owner.GetGroupObservation(selectedGroup) else nil,
-		obstacle = Obstacle.GetState(),
 	}
 	owner.InspectionChanged()
 end
@@ -135,15 +137,21 @@ function Inspection.SetGroupOverlayEnabled(enabled: boolean): ()
 end
 
 function Inspection.GetState(): Snapshot
-	local copy: Snapshot = table.clone(snapshot)
-	copy.rendered = if snapshot.rendered then table.clone(snapshot.rendered) else nil
+	local copy: Snapshot = {
+		selectedBoidId = snapshot.selectedBoidId, refreshedAt = snapshot.refreshedAt,
+		rendered = if snapshot.rendered then table.clone(snapshot.rendered) else nil,
+		selectedGroupId = snapshot.selectedGroupId, groupColor = snapshot.groupColor,
+		obstacle = Obstacle.GetState(),
+	}
 	if snapshot.client then
-		copy.client = table.clone(snapshot.client)
-		;(copy.client :: ClientSample).state = table.clone(snapshot.client.state)
+		local client: ClientSample = table.clone(snapshot.client)
+		client.state = table.clone(snapshot.client.state)
+		copy.client = client
 	end
 	if snapshot.server then
-		copy.server = table.clone(snapshot.server)
-		;(copy.server :: ObservationTypes.ServerSample).state = if snapshot.server.state then table.clone(snapshot.server.state) else nil
+		local server: ObservationTypes.ServerSample = table.clone(snapshot.server)
+		server.state = if snapshot.server.state then table.clone(snapshot.server.state) else nil
+		copy.server = server
 	end
 	if snapshot.group then
 		local group: SharedTypes.GroupObservation = table.clone(snapshot.group)
@@ -152,8 +160,6 @@ function Inspection.GetState(): Snapshot
 		for index, well in snapshot.group.gravityWells do group.gravityWells[index] = table.clone(well) end
 		copy.group = group
 	end
-	-- Includes a deep copy of probes/candidates; never expose the frozen capture.
-	copy.obstacle = Obstacle.GetState()
 	return copy
 end
 
@@ -165,7 +171,10 @@ end
 
 function Inspection.Stop(): ()
 	generation += 1
-	if connection then connection:Disconnect() connection = nil end
+	if connection then
+		connection:Disconnect()
+		connection = nil
+	end
 	source = nil
 	isActive, sessionId, selectionRevision = false, nil, -1
 	nextRead, nextGroups = 0, 0

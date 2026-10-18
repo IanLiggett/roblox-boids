@@ -83,7 +83,7 @@ function Obstacle.Refresh(isAvailable: boolean): ()
 end
 
 function Obstacle.GetState(): State
-	local copy = table.clone(state)
+	local copy: State = table.clone(state)
 	copy.decision = if state.decision then Diagnostics.Copy(state.decision) else nil
 	copy.status = if not isActive then "Observation inactive"
 		elseif not state.isEnabled then "Obstacle decisions OFF"

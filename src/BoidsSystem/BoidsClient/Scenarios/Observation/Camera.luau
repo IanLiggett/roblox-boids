@@ -138,8 +138,10 @@ local function scenarioBounds(): Bounds?
 end
 
 local function releaseLook(): ()
-	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-	UserInputService.MouseIconEnabled = true
+	if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	end
+	if not UserInputService.MouseIconEnabled then UserInputService.MouseIconEnabled = true end
 end
 
 local function freeAfterDeletion(message: string): ()
@@ -201,8 +203,10 @@ local function step(deltaTime: number, view: CFrame): (CFrame, Vector3?)
 	local canUseInput = hasWindowFocus and not GuiService.MenuIsOpen and UserInputService:GetFocusedTextBox() == nil
 	local isLooking = canUseInput and actions.LookHeld:GetState() == true
 	if isLooking then
-		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
-		UserInputService.MouseIconEnabled = false
+		if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCurrentPosition then
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+		end
+		if UserInputService.MouseIconEnabled then UserInputService.MouseIconEnabled = false end
 	else
 		releaseLook()
 	end

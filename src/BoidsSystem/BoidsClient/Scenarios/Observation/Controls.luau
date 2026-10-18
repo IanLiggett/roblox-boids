@@ -19,6 +19,7 @@ type ControlsApi = {
 	TrySelectBoid: (number) -> (boolean, string?),
 	SelectGroup: (number?) -> boolean,
 	GetGroupBindings: () -> {ScenarioTypes.GroupBinding},
+	GetGroupBinding: (number) -> ScenarioTypes.GroupBinding?,
 	Subscribe: (Types.ChangeDomain, () -> ()) -> (() -> ()),
 	Open: () -> (),
 	Close: () -> (),
@@ -60,7 +61,9 @@ local function button(parent: Instance, name: string, text: string, y: number, c
 	item.Text = text
 	-- Session controls remain reachable while the package owns the viewing camera.
 	item.Modal = true
-	item.Activated:Connect(callback :: (InputObject, number) -> ())
+	item.Activated:Connect(function(_input: InputObject, _clickCount: number): ()
+		callback()
+	end)
 	item.Parent = parent
 	return item
 end
@@ -142,7 +145,10 @@ function Controls.Start(observation: ControlsApi, sessionHost: ScrollingFrame, c
 		local selected = observation.GetCameraState().selectedGroupId
 		local index = if offset > 0 then 0 else 1
 		for i, binding in bindings do
-			if binding.groupId == selected then index = i break end
+			if binding.groupId == selected then
+				index = i
+				break
+			end
 		end
 		local nextIndex = (index - 1 + offset) % #bindings + 1
 		observation.SelectGroup(bindings[nextIndex].groupId)
@@ -166,6 +172,7 @@ function Controls.Start(observation: ControlsApi, sessionHost: ScrollingFrame, c
 	label(cameraPanel, "Camera follows rendered motion.\nF6: exit / restore gameplay", 488, 34)
 	local previousBoidId: number? = nil
 	local function renderCamera(): ()
+		if not cameraHost.Visible then return end
 		local state: Camera.State = observation.GetCameraState()
 		modeLabel.Text = "Mode: " .. state.mode
 		speedLabel.Text = string.format("Flight: %g studs/s | zoom: %.2fx", state.speed, state.zoomScale)
@@ -176,10 +183,8 @@ function Controls.Start(observation: ControlsApi, sessionHost: ScrollingFrame, c
 				previousBoidId = state.selectedBoidId
 			end
 		end
-		local binding: ScenarioTypes.GroupBinding? = nil
-		for _, candidate in observation.GetGroupBindings() do
-			if candidate.groupId == state.selectedGroupId then binding = candidate break end
-		end
+		local binding: ScenarioTypes.GroupBinding? = if state.selectedGroupId
+			then observation.GetGroupBinding(state.selectedGroupId) else nil
 		groupLabel.Text = if binding then string.format("Group #%d | %s (%s)", binding.groupId, binding.definition.name, binding.ownership)
 			else "Group: none selected"
 	end
@@ -217,6 +222,7 @@ function Controls.Start(observation: ControlsApi, sessionHost: ScrollingFrame, c
 	button(panel, "Exit", "Exit / restore camera observer", 492, observation.Close)
 
 	local function renderSession(): ()
+		if not sessionHost.Visible then return end
 		local state: ObservationTypes.SessionState = observation.GetSessionState()
 		panel.Visible = state.isActive
 		cameraObserver.Text = "Camera observer: " .. (if state.cameraEnabled then "ON" else "OFF")
@@ -241,8 +247,16 @@ function Controls.Start(observation: ControlsApi, sessionHost: ScrollingFrame, c
 		message.Text = state.message or ""
 	end
 	local function renderStreaming(): ()
+		if not sessionHost.Visible then return end
 		streaming.Text = streamingText(observation.GetStreamingStatus())
 	end
+	local visibilityConnections: {RBXScriptConnection} = {
+		cameraHost:GetPropertyChangedSignal("Visible"):Connect(renderCamera),
+		sessionHost:GetPropertyChangedSignal("Visible"):Connect(function(): ()
+			renderSession()
+			renderStreaming()
+		end),
+	}
 	local unsubscribes: {() -> ()} = {
 		observation.Subscribe("Session", renderSession),
 		observation.Subscribe("Streaming", renderStreaming),
@@ -253,6 +267,7 @@ function Controls.Start(observation: ControlsApi, sessionHost: ScrollingFrame, c
 	renderCamera()
 	return function(): ()
 		for _, unsubscribe in unsubscribes do unsubscribe() end
+		for _, connection in visibilityConnections do connection:Disconnect() end
 		panel:Destroy()
 		cameraPanel:Destroy()
 	end

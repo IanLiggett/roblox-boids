@@ -28,8 +28,8 @@ type Api = {
 	TrySelectBoid: (number) -> (boolean, string?),
 	PickBoid: (Vector3, Vector3, number?) -> number?,
 }
-local FOREGROUND = Color3.fromRGB(235, 240, 247)
-local BUTTON = Color3.fromRGB(52, 67, 86)
+local FOREGROUND: Color3 = Color3.fromRGB(235, 240, 247)
+local BUTTON: Color3 = Color3.fromRGB(52, 67, 86)
 
 local function vector(value: Vector3): string
 	return string.format("(%.1f, %.1f, %.1f)", value.X, value.Y, value.Z)
@@ -49,10 +49,10 @@ local function simulationText(title: string, state: SharedTypes.BoidObservation?
 end
 
 function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
-	local player = Players.LocalPlayer
-	local gui = panel:FindFirstAncestorOfClass("ScreenGui") :: ScreenGui
+	local player: Player = Players.LocalPlayer
+	local gui: ScreenGui = panel:FindFirstAncestorOfClass("ScreenGui") :: ScreenGui
 	local function label(name: string, y: number, height: number): TextLabel
-		local text = Instance.new("TextLabel")
+		local text: TextLabel = Instance.new("TextLabel")
 		text.Name = name
 		text.Position = UDim2.fromOffset(10, y)
 		text.Size = UDim2.new(1, -20, 0, height)
@@ -67,10 +67,9 @@ function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
 		return text
 	end
 	local function button(name: string, text: string, x: number, y: number, width: number, callback: () -> ()): TextButton
-		local b = Instance.new("TextButton")
+		local b: TextButton = Instance.new("TextButton")
 		b.Name = name
 		b.Text = text
-		b.Position = UDim2.fromOffset(x, y)
 		b.Size = UDim2.new(width / 400, -20 * width / 400, 0, 28)
 		b.Position = UDim2.new((x - 10) / 400, 10 - 20 * (x - 10) / 400, 0, y)
 		b.BackgroundColor3 = BUTTON
@@ -79,11 +78,13 @@ function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
 		b.TextSize = 12
 		b.TextColor3 = FOREGROUND
 		b.Parent = panel
-		b.Activated:Connect(callback)
+		b.Activated:Connect(function(_input: InputObject, _clickCount: number): ()
+			callback()
+		end)
 		return b
 	end
 	label("Heading", 8, 20).Text = "LIVE INSPECTOR / click through geometry"
-	local groups = Instance.new("ScrollingFrame")
+	local groups: ScrollingFrame = Instance.new("ScrollingFrame")
 	groups.Name = "Groups"
 	groups.Position = UDim2.fromOffset(10, 30)
 	groups.Size = UDim2.new(1, -20, 0, 92)
@@ -93,18 +94,19 @@ function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
 	groups.CanvasSize = UDim2.new()
 	groups.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	groups.Parent = panel
-	local layout = Instance.new("UIListLayout")
+	local layout: UIListLayout = Instance.new("UIListLayout")
 	layout.Padding = UDim.new(0, 2)
 	layout.Parent = groups
 	local rows: {[number]: TextButton} = {}
-	local message = label("Status", 518, 40)
-	local filter = button("Filter", "", 10, 128, 400, function(): ()
+	local message: TextLabel = label("Status", 518, 40)
+	local messageUntil = 0
+	local filter: TextButton = button("Filter", "", 10, 128, 400, function(): ()
 		local groupId = observation.GetCameraState().selectedGroupId
 		if observation.GetPickFilter() ~= nil then observation.SetPickFilter(nil)
 		elseif groupId ~= nil then observation.SetPickFilter(groupId)
 		else message.Text = "Choose a group first" end
 	end)
-	local field = Instance.new("TextBox")
+	local field: TextBox = Instance.new("TextBox")
 	field.Name = "BoidId"
 	field.Position = UDim2.fromOffset(10, 162)
 	field.Size = UDim2.new(0.65, -13, 0, 28)
@@ -123,7 +125,7 @@ function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
 			local accepted, reason = observation.TrySelectBoid(id)
 			message.Text = reason or (if accepted then "Selected #" .. id else "Selection rejected")
 		else message.Text = "Enter an integer ID: 0-65535" end
-		message:SetAttribute("MessageUntil", workspace:GetServerTimeNow() + 3)
+		messageUntil = workspace:GetServerTimeNow() + 3
 	end)
 	local showSelection, showGroup = true, false
 	local markerButton: TextButton
@@ -137,24 +139,24 @@ function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
 		observation.SetGroupOverlayEnabled(showGroup)
 		groupButton.Text = "Group overlays: " .. (if showGroup then "ON" else "OFF")
 	end)
-	local renderedText = label("Rendered", 230, 76)
-	local clientText = label("ClientSimulation", 308, 98)
-	local serverText = label("ServerSimulation", 410, 106)
-	local obstaclePanel = ObstaclePanel.Create(panel, observation)
+	local renderedText: TextLabel = label("Rendered", 230, 76)
+	local clientText: TextLabel = label("ClientSimulation", 308, 98)
+	local serverText: TextLabel = label("ServerSimulation", 410, 106)
+	local obstaclePanel: ObstaclePanel.Controller = ObstaclePanel.Create(panel, observation)
 	local displayedId: number? = nil
 	local isRunning = true
 	local isActive = false
 	local selectionContext: InputContext? = nil
 
 	local function refreshGroups(): ()
+		if not panel.Visible then return end
 		local retained: {[number]: boolean} = {}
 		local selectedGroup = observation.GetCameraState().selectedGroupId
 		for index, group in observation.GetInspectionGroups() do
 			local id = group.groupId
 			retained[id] = true
-			local row = rows[id]
-			if not row then
-				row = Instance.new("TextButton")
+			local row: TextButton = rows[id] or Instance.new("TextButton")
+			if not rows[id] then
 				row.Name = "Group_" .. id
 				row.Size = UDim2.new(1, -6, 0, 42)
 				row.BorderSizePixel = 0
@@ -173,15 +175,25 @@ function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
 				if group.clientCount then tostring(group.clientCount) else "unavailable")
 			row.BackgroundColor3 = if selectedGroup == id then Color3.fromRGB(65, 85, 110) else BUTTON
 		end
-		for id, row in rows do if not retained[id] then row:Destroy() rows[id] = nil end end
+		for id, row in rows do
+			if not retained[id] then
+				row:Destroy()
+				rows[id] = nil
+			end
+		end
 	end
 
 	local function refresh(): ()
-		local snapshot = observation.GetInspectionState()
+		local snapshot: Inspection.Snapshot = observation.GetInspectionState()
 		local now = snapshot.refreshedAt
-		local id, rendered, sample = snapshot.selectedBoidId, snapshot.rendered, snapshot.server
-		local client = if snapshot.client then snapshot.client.state else nil
-		local obstacle = snapshot.obstacle
+		local id = snapshot.selectedBoidId
+		local rendered: typeof(snapshot.rendered) = snapshot.rendered
+		local sample: ObservationTypes.ServerSample? = snapshot.server
+		local client: SharedTypes.BoidObservation? = if snapshot.client then snapshot.client.state else nil
+		local obstacle: Obstacle.State = snapshot.obstacle
+		-- World overlays stay active independently of dock visibility.
+		local overlayMessage = Overlays.Update(rendered, snapshot.groupColor, snapshot.group, showSelection, showGroup, obstacle.decision, obstacle)
+		if not panel.Visible then return end
 		obstaclePanel.Refresh(obstacle, now)
 		local header = if id then " #" .. id else " | no selection"
 		if rendered and rendered.isRendered then
@@ -201,52 +213,54 @@ function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
 			field.Text = if id then tostring(id) else ""
 			displayedId = id
 		end
-		local overlayMessage = Overlays.Update(rendered, snapshot.groupColor, snapshot.group, showSelection, showGroup, obstacle.decision, obstacle)
-		if now >= (message:GetAttribute("MessageUntil") or 0) then message.Text = overlayMessage end
+		if now >= messageUntil then message.Text = overlayMessage end
 		local pickFilter = observation.GetPickFilter()
 		filter.Text = if pickFilter ~= nil then "Click/ID filter: group #" .. pickFilter .. " | clear"
 			else "Click/ID filter: all groups | use selected group"
 	end
 
 	local function sync(): ()
-		local state = observation.GetSessionState()
+		local state: ObservationTypes.SessionState = observation.GetSessionState()
 		local active = state.isActive and state.isAllowed
 		if active == isActive then return end
 		isActive = active
 		if active then
 			Overlays.Start()
-			local context = Instance.new("InputContext")
+			local context: InputContext = Instance.new("InputContext")
 			context.Name = "BoidsObservationSelectionInput"
 			context.Priority = 6000
 			context.Sink = true
-			local action = Instance.new("InputAction")
+			local action: InputAction = Instance.new("InputAction")
 			action.Name = "Pick"
 			action.Type = Enum.InputActionType.Bool
-			local binding = Instance.new("InputBinding")
+			local binding: InputBinding = Instance.new("InputBinding")
 			binding.KeyCode = Enum.KeyCode.MouseLeftButton
 			binding.Parent = action
 			action.Parent = context
 			action.Pressed:Connect(function(): ()
 				if not isRunning or not isActive or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() then return end
-				local mouse = UserInputService:GetMouseLocation()
-				local inset = GuiService:GetGuiInset()
+				local mouse: Vector2 = UserInputService:GetMouseLocation()
+				local inset: Vector2 = GuiService:GetGuiInset()
 				if mouse.Y < inset.Y then return end
 				-- GUI hit testing uses inset-local coordinates; projection below keeps raw viewport coordinates.
-				local guiPosition = mouse - inset
+				local guiPosition: Vector2 = mouse - inset
 				for _, object in player.PlayerGui:GetGuiObjectsAtPosition(guiPosition.X, guiPosition.Y) do
 					if object:IsDescendantOf(gui) then return end
 				end
-				local camera = workspace.CurrentCamera
+				local camera: Camera? = workspace.CurrentCamera
 				if not camera then return end
 				-- GetMouseLocation includes the top-bar inset; use viewport coordinates.
-				local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
+				local ray: Ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
 				local tolerance = 12 * math.tan(math.rad(camera.FieldOfView * 0.5)) / math.max(camera.ViewportSize.Y, 1)
 				observation.PickBoid(ray.Origin, ray.Direction * 100000, tolerance)
 			end)
 			context.Parent = player
 			selectionContext = context
 		else
-			if selectionContext then selectionContext:Destroy() selectionContext = nil end
+			if selectionContext then
+				selectionContext:Destroy()
+				selectionContext = nil
+			end
 			Overlays.Stop()
 		end
 	end
@@ -256,9 +270,15 @@ function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
 		observation.Subscribe("Groups", refreshGroups),
 		observation.Subscribe("Capture", refresh),
 	}
+	local visibilityConnection: RBXScriptConnection = panel:GetPropertyChangedSignal("Visible"):Connect(function(): ()
+		if not isRunning then return end
+		refreshGroups()
+		refresh()
+	end)
 	sync()
 	return function(): ()
 		isRunning = false
+		visibilityConnection:Disconnect()
 		for _, unsubscribe in unsubscribes do unsubscribe() end
 		if selectionContext then selectionContext:Destroy() end
 		Overlays.Stop()

@@ -17,14 +17,16 @@ type Region = { position: Vector3, revision: number, status: "loading" | "failed
 
 local isActive = false
 local generation = 0
-local view = CFrame.identity
-local focus = CFrame.identity
+local view: CFrame = CFrame.identity
+local focus: CFrame = CFrame.identity
 local savedCamera: SavedCamera? = nil
 local resumeInput: (() -> ())? = nil
 local connections: {RBXScriptConnection} = {}
 local regions: {[string]: Region} = {}
 local onChanged: (() -> ())? = nil
 local cameraDriver: ((number, CFrame) -> (CFrame, Vector3?))? = nil
+local lastDriverView: CFrame? = nil
+local lastFocusPosition: Vector3? = nil
 local savedMouseBehavior = Enum.MouseBehavior.Default
 local wasMouseIconEnabled = true
 local REGION_DISTANCE = 128
@@ -46,7 +48,7 @@ local function restoreCamera(): ()
 end
 
 local function applyCamera(): ()
-	local camera = workspace.CurrentCamera
+	local camera: Camera? = workspace.CurrentCamera
 	if not camera then
 		return
 	end
@@ -54,23 +56,21 @@ local function applyCamera(): ()
 		restoreCamera()
 		savedCamera = { camera = camera, cameraType = camera.CameraType, cframe = camera.CFrame, focus = camera.Focus }
 	end
-	camera.CameraType = Enum.CameraType.Scriptable
-	camera.CFrame = view
-	camera.Focus = focus
+	if camera.CameraType ~= Enum.CameraType.Scriptable then camera.CameraType = Enum.CameraType.Scriptable end
+	if camera.CFrame ~= view then camera.CFrame = view end
+	if camera.Focus ~= focus then camera.Focus = focus end
 end
 
 local function requestRegion(key: string, position: Vector3): ()
 	if not workspace.StreamingEnabled then
 		return
 	end
-	local region = regions[key]
-	if region and (region.position - position).Magnitude < REGION_DISTANCE then
+	local existing: Region? = regions[key]
+	if existing and (existing.position - position).Magnitude < REGION_DISTANCE then
 		return
 	end
-	if not region then
-		region = { position = position, revision = 0, status = "loading", isRunning = false }
-		regions[key] = region
-	end
+	local region: Region = existing or { position = position, revision = 0, status = "loading", isRunning = false }
+	regions[key] = region
 	region.position = position
 	region.revision += 1
 	region.status = "loading"
@@ -84,7 +84,7 @@ local function requestRegion(key: string, position: Vector3): ()
 	task.spawn(function(): ()
 		while isActive and generation == currentGeneration and regions[key] == record do
 			local revision = record.revision
-			local requestedPosition = record.position
+			local requestedPosition: Vector3 = record.position
 			local startedAt = os.clock()
 			local ok = pcall(function(): ()
 				player:RequestStreamAroundAsync(requestedPosition, STREAM_TIMEOUT)
@@ -124,12 +124,16 @@ end
 
 function Handoff.SetCameraDriver(driver: ((number, CFrame) -> (CFrame, Vector3?))?): ()
 	cameraDriver = driver
+	lastDriverView = nil
+	lastFocusPosition = nil
 end
 
 function Handoff.SetCameraCFrame(cframe: CFrame): ()
 	assert(isActive, "Observation camera requires an active handoff")
 	view = cframe
 	focus = cframe * CFrame.new(0, 0, -32)
+	lastDriverView = nil
+	lastFocusPosition = nil
 	applyCamera()
 	CameraReporter.ReportNow(view)
 	requestRegion("Camera", view.Position)
@@ -160,7 +164,7 @@ function Handoff.Start(changed: () -> (), hostHooks: HostHooks.Client?): ()
 	isActive = true
 	generation += 1
 	onChanged = changed
-	local camera = workspace.CurrentCamera
+	local camera: Camera? = workspace.CurrentCamera
 	view = if camera then camera.CFrame else CFrame.identity
 	focus = if camera then camera.Focus else view * CFrame.new(0, 0, -32)
 	savedMouseBehavior = UserInputService.MouseBehavior
@@ -180,10 +184,14 @@ function Handoff.Start(changed: () -> (), hostHooks: HostHooks.Client?): ()
 			return
 		end
 		if cameraDriver then
-			local previousPosition = view.Position
-			local nextView, focusPosition = cameraDriver(deltaTime, view)
+			local previousPosition: Vector3 = view.Position
+			local nextView: CFrame, focusPosition: Vector3? = cameraDriver(deltaTime, view)
+			if nextView ~= lastDriverView or focusPosition ~= lastFocusPosition then
+				focus = if focusPosition then CFrame.new(focusPosition) else nextView * CFrame.new(0, 0, -32)
+				lastDriverView = nextView
+				lastFocusPosition = focusPosition
+			end
 			view = nextView
-			focus = if focusPosition then CFrame.new(focusPosition) else view * CFrame.new(0, 0, -32)
 			if (view.Position - previousPosition).Magnitude >= REGION_DISTANCE then
 				CameraReporter.ReportNow(view)
 			end
@@ -202,6 +210,8 @@ function Handoff.Stop(): ()
 	isActive = false
 	generation += 1
 	cameraDriver = nil
+	lastDriverView = nil
+	lastFocusPosition = nil
 	RunService:UnbindFromRenderStep("BoidsObservationCamera")
 	for _, connection in connections do
 		connection:Disconnect()

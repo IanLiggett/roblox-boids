@@ -73,7 +73,7 @@ local function isAvailable(player: Player): boolean
 end
 
 local function createFocus(player: Player, session: Session, name: string, position: Vector3): BasePart
-	local focus = Instance.new("Part")
+	local focus: Part = Instance.new("Part")
 	focus.Name = name
 	focus.Size = Vector3.one
 	focus.Anchored = true
@@ -110,7 +110,7 @@ end
 
 local function applyObservers(player: Player, session: Session): ()
 	local boids: BoidsApi = activeBoids :: BoidsApi
-	local positions: {Vector3} = table.create(#session.fixedObservers)
+	local positions: {Vector3} = table.create(#session.fixedObservers, Vector3.zero)
 	for index, observer in session.fixedObservers do
 		positions[index] = observer.position
 	end
@@ -165,11 +165,8 @@ end
 
 local function takeRequestToken(player: Player): boolean
 	local now = os.clock()
-	local rate: RateState? = rates[player]
-	if not rate then
-		rate = { tokens = REQUEST_BURST, updatedAt = now }
-		rates[player] = rate
-	end
+	local rate: RateState = rates[player] or { tokens = REQUEST_BURST, updatedAt = now }
+	rates[player] = rate
 	rate.tokens = math.min(REQUEST_BURST, rate.tokens + (now - rate.updatedAt) * REQUESTS_PER_SECOND)
 	rate.updatedAt = now
 	if rate.tokens < 1 then
@@ -278,19 +275,20 @@ local function handleRequest(player: Player, rawRequest: unknown): ()
 	end
 	if request.action == "Open" then
 		if not session then
-			session = {
+			local created: Session = {
 				id = HttpService:GenerateGUID(false), cameraEnabled = true, fixedObservers = {},
 				selectionRevision = 0, fixedFoci = {}, lastCameraReport = -math.huge,
 				resumeInput = if hostHooks then hostHooks.SuspendInput(player) else nil,
 			}
+			session = created
 			if workspace.StreamingEnabled then
-				local folder = Instance.new("Folder")
+				local folder: Folder = Instance.new("Folder")
 				folder.Name = "BoidsObservationStreaming_" .. player.UserId
 				folder.Parent = workspace
 				session.streamingFolder = folder
 				-- The first camera report supplies the view, independently of LOD enablement.
-				local character = player.Character
-				local root = character and character:FindFirstChild("HumanoidRootPart")
+				local character: Model? = player.Character
+				local root: Instance? = character and character:FindFirstChild("HumanoidRootPart")
 				if root and root:IsA("BasePart") then
 					session.cameraFocus = createFocus(player, session, "Camera", root.Position)
 				end

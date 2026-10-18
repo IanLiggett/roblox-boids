@@ -9,6 +9,15 @@ Current interface
 - The developer controls expose mode buttons, boid-ID selection, group cycling by runtime ID, speed, and zoom. Text focus, the Roblox menu, and window blur suppress flight/look input. Stop removes the camera context, driver, and input listeners before handoff restoration.
 - Deletion clears the corresponding selection and enters free flight without repositioning the camera. Missing/first-render/stale states remain explicit; camera modes never place or turn boids.
 
+Observer presentation cost
+
+Current implementation
+
+- The feature sampler and obstacle capture continue independently of dock visibility. Hidden inspector, camera, and session pages defer widget formatting until their existing page becomes visible; world overlays remain active. Visibility listeners are disconnected during presentation cleanup.
+- Public inspection/sample/obstacle getters still return independent nested values. The private inspection sample retains the immutable accepted server sample and obtains obstacle copies only when returning a public snapshot, avoiding intermediate diagnostic copies.
+- Captured obstacle geometry occupies the leading pooled adornment/label slots. Its private cache uses boid ID, capture generation, job order, and layer settings; selection/group visuals follow those slots. Exit/Stop clears the cache and pools. Unchanged frozen geometry is retained while decision-age wording and moving selection visuals continue updating.
+- Stationary camera/input properties are assigned only when different. Camera replacement, the first driver frame, focus-mode changes, and explicit view moves still apply the held view/focus through Handoff.
+
 Boids initial replay requests
 
 Current implementation

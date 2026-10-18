@@ -1,7 +1,9 @@
 --!strict
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local SharedTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").SharedTypes)
 local Obstacle = require(script.Parent.Parent.Obstacle)
-local SharedTypes = require(game:GetService("ReplicatedStorage").BoidsReplicated.SharedTypes)
 local Panel = {}
 
 type Api = {
@@ -46,7 +48,12 @@ local function describe(value: SharedTypes.ObstacleObservation, state: Obstacle.
 	}
 	for _, role in {"Forward", "Target", "Heading"} do
 		local found: SharedTypes.ObstacleProbe? = nil
-		for _, probe in value.probes do if probe.role == role then found = probe break end end
+		for _, probe in value.probes do
+			if probe.role == role then
+				found = probe
+				break
+			end
+		end
 		table.insert(rows, if found then string.format("%s: %s | tested %.2f%s", role,
 			if found.didHit then "HIT" else "clear", found.vector.Magnitude,
 			if found.hitDistance then string.format(" | hit %.2f", found.hitDistance) else "")
@@ -81,7 +88,7 @@ local function describe(value: SharedTypes.ObstacleObservation, state: Obstacle.
 end
 
 function Panel.Create(parent: GuiObject, api: Api): Controller
-	local outer = Instance.new("Frame")
+	local outer: Frame = Instance.new("Frame")
 	outer.Name = "ObstacleDecisions"
 	outer.Position = UDim2.fromOffset(10, 562)
 	outer.Size = UDim2.new(1, -20, 0, 66)
@@ -89,7 +96,7 @@ function Panel.Create(parent: GuiObject, api: Api): Controller
 	outer.Parent = parent
 	local expanded = false
 	local function button(name: string, text: string, target: Instance, position: UDim2, size: UDim2, callback: () -> ()): TextButton
-		local value = Instance.new("TextButton")
+		local value: TextButton = Instance.new("TextButton")
 		value.Name, value.Text = name, text
 		value.Position, value.Size = position, size
 		value.BackgroundColor3 = Color3.fromRGB(52, 67, 86)
@@ -97,10 +104,12 @@ function Panel.Create(parent: GuiObject, api: Api): Controller
 		value.TextColor3 = Color3.fromRGB(235, 240, 247)
 		value.Font, value.TextSize = Enum.Font.Code, 12
 		value.Parent = target
-		value.Activated:Connect(callback)
+		value.Activated:Connect(function(_input: InputObject, _clickCount: number): ()
+			callback()
+		end)
 		return value
 	end
-	local body = Instance.new("Frame")
+	local body: Frame = Instance.new("Frame")
 	body.Name = "Details"
 	body.Position = UDim2.fromOffset(0, 66)
 	body.Size = UDim2.new(1, 0, 0, 0)
@@ -108,26 +117,26 @@ function Panel.Create(parent: GuiObject, api: Api): Controller
 	body.BackgroundTransparency = 1
 	body.Visible = false
 	body.Parent = outer
-	local layout = Instance.new("UIListLayout")
+	local layout: UIListLayout = Instance.new("UIListLayout")
 	layout.Padding = UDim.new(0, 6)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = body
 	local function resize(): ()
 		outer.Size = UDim2.new(1, -20, 0, 72 + (if expanded then body.AbsoluteSize.Y else 0))
 	end
-	local enable = button("ObstacleToggle", "Obstacle decisions: OFF", outer, UDim2.new(), UDim2.new(0.5, -3, 0, 28), function(): ()
-		local state = api.GetObstacleState()
+	local enable: TextButton = button("ObstacleToggle", "Obstacle decisions: OFF", outer, UDim2.new(), UDim2.new(0.5, -3, 0, 28), function(): ()
+		local state: Obstacle.State = api.GetObstacleState()
 		api.SetObstacleEnabled(not state.isEnabled)
 		expanded = not state.isEnabled
 		body.Visible = expanded
 		resize()
 	end)
-	local collapse = button("Collapse", "Details: show", outer, UDim2.new(0.5, 3, 0, 0), UDim2.new(0.5, -3, 0, 28), function(): ()
+	local collapse: TextButton = button("Collapse", "Details: show", outer, UDim2.new(0.5, 3, 0, 0), UDim2.new(0.5, -3, 0, 28), function(): ()
 		expanded = not expanded
 		body.Visible = expanded
 		resize()
 	end)
-	local status = Instance.new("TextLabel")
+	local status: TextLabel = Instance.new("TextLabel")
 	status.Name = "Status"
 	status.Position = UDim2.fromOffset(0, 32)
 	status.Size = UDim2.new(1, 0, 0, 30)
@@ -137,26 +146,26 @@ function Panel.Create(parent: GuiObject, api: Api): Controller
 	status.TextXAlignment = Enum.TextXAlignment.Left
 	status.TextWrapped = true
 	status.Parent = outer
-	local layers = Instance.new("Frame")
+	local layers: Frame = Instance.new("Frame")
 	layers.Name = "Layers"
 	layers.Size = UDim2.new(1, 0, 0, 28)
 	layers.BackgroundTransparency = 1
 	layers.LayoutOrder = 1
 	layers.Parent = body
-	local probes = button("Probes", "Probes: ON", layers, UDim2.new(), UDim2.new(1/3, -4, 1, 0), function(): ()
+	local probes: TextButton = button("Probes", "Probes: ON", layers, UDim2.new(), UDim2.new(1/3, -4, 1, 0), function(): ()
 		api.SetObstacleLayer("Probes", not api.GetObstacleState().showProbes)
 	end)
-	local candidates = button("Candidates", "Candidates: ON", layers, UDim2.new(1/3, 2, 0, 0), UDim2.new(1/3, -4, 1, 0), function(): ()
+	local candidates: TextButton = button("Candidates", "Candidates: ON", layers, UDim2.new(1/3, 2, 0, 0), UDim2.new(1/3, -4, 1, 0), function(): ()
 		api.SetObstacleLayer("Candidates", not api.GetObstacleState().showCandidates)
 	end)
-	local movement = button("Movement", "Movement: ON", layers, UDim2.new(2/3, 4, 0, 0), UDim2.new(1/3, -4, 1, 0), function(): ()
+	local movement: TextButton = button("Movement", "Movement: ON", layers, UDim2.new(2/3, 4, 0, 0), UDim2.new(1/3, -4, 1, 0), function(): ()
 		api.SetObstacleLayer("Movement", not api.GetObstacleState().showMovement)
 	end)
-	local freeze = button("Freeze", "Freeze latest", body, UDim2.new(), UDim2.new(1, 0, 0, 28), function(): ()
+	local freeze: TextButton = button("Freeze", "Freeze latest", body, UDim2.new(), UDim2.new(1, 0, 0, 28), function(): ()
 		if api.GetObstacleState().isFrozen then api.ResumeObstacle() else api.FreezeObstacle() end
 	end)
 	freeze.LayoutOrder = 2
-	local readout = Instance.new("TextLabel")
+	local readout: TextLabel = Instance.new("TextLabel")
 	readout.Name = "Decision"
 	readout.Size = UDim2.new(1, 0, 0, 0)
 	readout.AutomaticSize = Enum.AutomaticSize.Y
@@ -168,7 +177,7 @@ function Panel.Create(parent: GuiObject, api: Api): Controller
 	readout.TextYAlignment = Enum.TextYAlignment.Top
 	readout.TextWrapped = true
 	readout.Parent = body
-	local sizeChanged = body:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize)
+	local sizeChanged: RBXScriptConnection = body:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize)
 	return {
 		Refresh = function(state: Obstacle.State, now: number): ()
 			enable.Text = "Obstacle decisions: " .. (if state.isEnabled then "ON" else "OFF")
@@ -181,7 +190,9 @@ function Panel.Create(parent: GuiObject, api: Api): Controller
 			freeze.Active = state.isEnabled and state.decision ~= nil
 			freeze.AutoButtonColor = freeze.Active
 			freeze.TextTransparency = if freeze.Active then 0 else 0.5
-			readout.Text = if state.decision then describe(state.decision, state, now) else state.status .. "\nNo probes assumed clear.\nCapture does not change LOD scheduling."
+			if expanded then
+				readout.Text = if state.decision then describe(state.decision, state, now) else state.status .. "\nNo probes assumed clear.\nCapture does not change LOD scheduling."
+			end
 			resize()
 		end,
 		Destroy = function(): ()

@@ -1,7 +1,9 @@
 --!strict
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local SharedTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").SharedTypes)
 local Renderer = require(script.Parent.Parent.Parent.Parent.BoidsRenderer)
-local SharedTypes = require(game:GetService("ReplicatedStorage").BoidsReplicated.SharedTypes)
 local Overlays = {}
 export type ObstacleLayers = { showProbes: boolean, showCandidates: boolean, showMovement: boolean }
 type Item = SphereHandleAdornment | LineHandleAdornment
@@ -16,41 +18,59 @@ local total = 0
 local missing = 0
 local truncated = false
 local LIMIT = 512
+type ObstacleCache = {
+	boidId: number, generation: number, jobOrder: number, layerKey: number,
+	used: {[ItemClass]: number}, labelCount: number, total: number, isTruncated: boolean,
+}
+local obstacleCache: ObstacleCache? = nil
 
 local function item(className: ItemClass, color: Color3, transparency: number): Item?
-	if total >= LIMIT then truncated = true return nil end
+	if total >= LIMIT then
+		truncated = true
+		return nil
+	end
 	total += 1
 	local pool: {Item}? = pools[className]
-	if not pool then pool = {} pools[className] = pool end
+	if not pool then
+		pool = {}
+		pools[className] = pool
+	end
 	local index = (used[className] or 0) + 1
 	used[className] = index
-	local value: Item? = (pool :: {Item})[index]
-	if not value then
-		value = (Instance.new :: (ItemClass) -> Item)(className)
+	local cached: Item? = (pool :: {Item})[index]
+	local value: Item = cached or (if className == "SphereHandleAdornment" then Instance.new("SphereHandleAdornment") else Instance.new("LineHandleAdornment"))
+	if not cached then
 		value.Adornee = anchor :: Part
 		value.AlwaysOnTop = true
 		value.ZIndex = 1
 		value.Parent = folder
 		;(pool :: {Item})[index] = value
 	end
-	;(value :: Item).Visible = true
-	;(value :: Item).Color3 = color
-	;(value :: Item).Transparency = transparency
+	if not value.Visible then value.Visible = true end
+	if value.Color3 ~= color then value.Color3 = color end
+	if value.Transparency ~= transparency then value.Transparency = transparency end
 	return value
 end
 
 local function sphere(position: Vector3, radius: number, color: Color3, transparency: number): ()
 	local value: SphereHandleAdornment? = item("SphereHandleAdornment", color, transparency) :: SphereHandleAdornment?
-	if value then value.CFrame = CFrame.new(position) value.Radius = math.max(radius, 0.1) end
+	if value then
+		local cframe: CFrame = CFrame.new(position)
+		local size = math.max(radius, 0.1)
+		if value.CFrame ~= cframe then value.CFrame = cframe end
+		if value.Radius ~= size then value.Radius = size end
+	end
 end
 
 local function line(a: Vector3, b: Vector3, color: Color3, thickness: number): ()
 	if (b - a).Magnitude < 0.001 then return end
 	local value: LineHandleAdornment? = item("LineHandleAdornment", color, 0) :: LineHandleAdornment?
 	if value then
-		value.CFrame = CFrame.lookAt(a, b)
-		value.Length = (b - a).Magnitude
-		value.Thickness = thickness
+		local cframe: CFrame = CFrame.lookAt(a, b)
+		local length = (b - a).Magnitude
+		if value.CFrame ~= cframe then value.CFrame = cframe end
+		if value.Length ~= length then value.Length = length end
+		if value.Thickness ~= thickness then value.Thickness = thickness end
 	end
 end
 
@@ -62,7 +82,10 @@ local MAGENTA: Color3 = Color3.fromRGB(255, 100, 230)
 local AMBER: Color3 = Color3.fromRGB(255, 190, 65)
 
 local function worldLabel(position: Vector3, text: string, color: Color3): ()
-	if total >= LIMIT then truncated = true return end
+	if total >= LIMIT then
+		truncated = true
+		return
+	end
 	total += 1
 	labelUsed += 1
 	local gui: BillboardGui? = labels[labelUsed]
@@ -141,26 +164,47 @@ end
 
 function Overlays.Start(): ()
 	if folder then return end
-	folder = Instance.new("Folder")
-	folder.Name = "BoidsObservationOverlays"
-	folder.Parent = workspace
-	anchor = Instance.new("Part")
-	anchor.Name = "AdornmentAnchor"
-	anchor.Anchored = true
-	anchor.CanCollide = false
-	anchor.CanTouch = false
-	anchor.CanQuery = false
-	anchor.Transparency = 1
-	anchor.Size = Vector3.one
-	anchor.CFrame = CFrame.identity
-	anchor.Parent = folder
+	local createdFolder: Folder = Instance.new("Folder")
+	createdFolder.Name = "BoidsObservationOverlays"
+	createdFolder.Parent = workspace
+	folder = createdFolder
+	local createdAnchor: Part = Instance.new("Part")
+	createdAnchor.Name = "AdornmentAnchor"
+	createdAnchor.Anchored = true
+	createdAnchor.CanCollide = false
+	createdAnchor.CanTouch = false
+	createdAnchor.CanQuery = false
+	createdAnchor.Transparency = 1
+	createdAnchor.Size = Vector3.one
+	createdAnchor.CFrame = CFrame.identity
+	createdAnchor.Parent = createdFolder
+	anchor = createdAnchor
 end
 
 function Overlays.Update(rendered: Renderer.RenderedBoidState?, groupColor: Color3?, groupState: SharedTypes.GroupObservation?, showSelection: boolean, showGroup: boolean, obstacle: SharedTypes.ObstacleObservation?, obstacleLayers: ObstacleLayers?): string
 	if not folder then return "Overlays inactive" end
 	table.clear(used)
 	total, missing, truncated, labelUsed = 0, 0, false, 0
-	if obstacle and obstacleLayers then drawObstacle(obstacle, obstacleLayers) end
+	if obstacle and obstacleLayers then
+		local layerKey = (if obstacleLayers.showProbes then 1 else 0)
+			+ (if obstacleLayers.showCandidates then 2 else 0) + (if obstacleLayers.showMovement then 4 else 0)
+		local cached: ObstacleCache? = obstacleCache
+		if cached and cached.boidId == obstacle.boidId and cached.generation == obstacle.generation
+			and cached.jobOrder == obstacle.jobOrder and cached.layerKey == layerKey then
+			-- Captured geometry occupies the leading pool slots; moving selection/group visuals follow it.
+			for className, count in cached.used do used[className] = count end
+			total, labelUsed, truncated = cached.total, cached.labelCount, cached.isTruncated
+		else
+			drawObstacle(obstacle, obstacleLayers)
+			obstacleCache = {
+				boidId = obstacle.boidId, generation = obstacle.generation, jobOrder = obstacle.jobOrder,
+				layerKey = layerKey, used = table.clone(used), labelCount = labelUsed,
+				total = total, isTruncated = truncated,
+			}
+		end
+	else
+		obstacleCache = nil
+	end
 	if showSelection and rendered and rendered.isRendered then
 		local position: Vector3 = rendered.cframe.Position
 		sphere(position, 3, Color3.new(1, 1, 0), 0.35)
@@ -198,17 +242,25 @@ function Overlays.Update(rendered: Renderer.RenderedBoidState?, groupColor: Colo
 		end
 	end
 	for className, pool in pools do
-		for i = (used[className] or 0) + 1, #pool do pool[i].Visible = false end
+		for i = (used[className] or 0) + 1, #pool do
+			if pool[i].Visible then pool[i].Visible = false end
+		end
 	end
-	for index = labelUsed + 1, #labels do labels[index].Enabled = false end
+	for index = labelUsed + 1, #labels do
+		if labels[index].Enabled then labels[index].Enabled = false end
+	end
 	return string.format("Runtime overlays: %d items%s%s", total,
 		if missing > 0 then string.format(" | %d unavailable references", missing) else "",
 		if truncated then " | 512-item limit" else "")
 end
 
 function Overlays.Stop(): ()
-	if folder then folder:Destroy() folder = nil end
+	if folder then
+		folder:Destroy()
+		folder = nil
+	end
 	anchor = nil
+	obstacleCache = nil
 	table.clear(pools)
 	table.clear(labels)
 	table.clear(used)

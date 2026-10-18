@@ -35,7 +35,7 @@ type SessionState = ObservationTypes.SessionState
 type ServerSample = ObservationTypes.ServerSample
 
 local localPlayer: Player = Players.LocalPlayer
-local scenarioModules = BoidsReplicated.Scenarios
+local scenarioModules: Folder = BoidsReplicated.Scenarios
 local requestRemote: RemoteEvent = scenarioModules:WaitForChild("ObservationRequest") :: RemoteEvent
 local stateRemote: RemoteEvent = scenarioModules:WaitForChild("ObservationState") :: RemoteEvent
 local sampleRemote: UnreliableRemoteEvent = scenarioModules:WaitForChild("ObservationSample") :: UnreliableRemoteEvent
@@ -71,9 +71,9 @@ local function syncInspection(): ()
 end
 
 local function getGroupCount(groupId: number): number?
-	local binding = bindingsById[groupId]
+	local binding: GroupBinding? = bindingsById[groupId]
 	if not binding then return nil end
-	local group = if binding.ownership == "client" then localGroupsById[groupId] else SimulationReplication.GetClientGroup(groupId)
+	local group: Group? = if binding.ownership == "client" then localGroupsById[groupId] else SimulationReplication.GetClientGroup(groupId)
 	return if group then group.boidCount else nil
 end
 
@@ -81,8 +81,10 @@ local function startInspection(): ()
 	Inspection.Start({
 		GetSelectedBoid = function(): number? return selectedBoidId end,
 		GetSelectedGroup = function(): number? return Camera.GetState().selectedGroupId end,
-		GetServerSample = Observation.GetServerSample,
+		-- Private sampling can retain the immutable received sample; public reads copy it.
+		GetServerSample = function(): ServerSample? return serverSample end,
 		GetBindings = Observation.GetGroupBindings,
+		GetBinding = Observation.GetGroupBinding,
 		GetGroupCount = getGroupCount,
 		GetBoidObservation = function(id: number): SharedTypes.BoidObservation?
 			return if activeBoids then activeBoids.GetBoidObservation(id) else nil
@@ -109,7 +111,7 @@ local function applyAcceptedObservers(): ()
 		boids.ResetViewerObservers(localPlayer.UserId)
 		return
 	end
-	local positions: {Vector3} = table.create(#sessionState.fixedObservers)
+	local positions: {Vector3} = table.create(#sessionState.fixedObservers, Vector3.zero)
 	for index, observer in sessionState.fixedObservers do
 		positions[index] = observer.position
 	end
@@ -120,14 +122,17 @@ local function acceptState(state: SessionState): ()
 	if state.revision <= sessionState.revision then
 		return
 	end
-	local previous = sessionState
+	local previous: SessionState = sessionState
 	local isNewSession = state.sessionId ~= previous.sessionId
 	local lifecycleChanged = isNewSession or state.isActive ~= previous.isActive or state.isAllowed ~= previous.isAllowed
 	local fixedChanged = #state.fixedObservers ~= #previous.fixedObservers
 	if not fixedChanged then
 		for index, observer in state.fixedObservers do
-			local old = previous.fixedObservers[index]
-			if observer.id ~= old.id or observer.position ~= old.position then fixedChanged = true break end
+			local old: ObservationTypes.FixedObserver = previous.fixedObservers[index]
+			if observer.id ~= old.id or observer.position ~= old.position then
+				fixedChanged = true
+				break
+			end
 		end
 	end
 	local sessionChanged = lifecycleChanged or fixedChanged or state.cameraEnabled ~= previous.cameraEnabled or state.message ~= previous.message
@@ -201,12 +206,12 @@ local function start(): ()
 		end
 	end))
 	startInspection()
-	local presentation = Dock.Start(Observation)
+	local presentation: Dock.Controller = Dock.Start(Observation)
 	dock = presentation
 	local Controls = require(script.Controls)
-	stopControls = Controls.Start(Observation, presentation.Pages.Session, presentation.Pages.Camera)
+	stopControls = Controls.Start(Observation, presentation.pages.Session, presentation.pages.Camera)
 	local Inspector = require(script.Inspector)
-	stopInspector = Inspector.Start(Observation, presentation.Pages.Inspector)
+	stopInspector = Inspector.Start(Observation, presentation.pages.Inspector)
 	sendCommand({ action = "Sync" })
 end
 
@@ -224,7 +229,10 @@ function Observation.RegisterScenario(
 	stopDeletion = boids.SubscribeDeleted(function(ids: {number}): ()
 		if not sessionState.isActive or isClosing then return end
 		for _, id in ids do
-			if id == selectedBoidId then Observation.SelectBoid(nil) break end
+			if id == selectedBoidId then
+				Observation.SelectBoid(nil)
+				break
+			end
 		end
 	end)
 	activeBoids = boids
@@ -238,7 +246,7 @@ function Observation.RegisterScenario(
 		bindingsById[binding.groupId] = binding
 	end
 	for index, spawned in spawnedGroups do
-		local group = spawned.group
+		local group: Group = spawned.group
 		local binding: GroupBinding = {
 			groupId = group.id,
 			ownership = "client",
@@ -353,7 +361,7 @@ end
 
 function Observation.GetServerSample(): ServerSample?
 	if not serverSample then return nil end
-	local sample = table.clone(serverSample)
+	local sample: ServerSample = table.clone(serverSample)
 	sample.state = if serverSample.state then table.clone(serverSample.state) else nil
 	return sample
 end
@@ -456,13 +464,22 @@ function Observation.Stop(): ()
 		connection:Disconnect()
 	end
 	table.clear(connections)
-	if stopDeletion then stopDeletion() stopDeletion = nil end
-	if stopInspector then stopInspector() stopInspector = nil end
+	if stopDeletion then
+		stopDeletion()
+		stopDeletion = nil
+	end
+	if stopInspector then
+		stopInspector()
+		stopInspector = nil
+	end
 	if stopControls then
 		stopControls()
 		stopControls = nil
 	end
-	if dock then dock.Destroy() dock = nil end
+	if dock then
+		dock.Destroy()
+		dock = nil
+	end
 	if activeBoids then
 		activeBoids.ResetViewerObservers(localPlayer.UserId)
 	end
