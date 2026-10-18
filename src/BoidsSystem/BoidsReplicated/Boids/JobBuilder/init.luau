@@ -36,6 +36,8 @@ type Job = SharedTypes.Job
 type JobRecipients = {[number]: {number}}
 local groups: SharedTypes.GroupRegistry
 
+local IS_CLIENT = RunService:IsClient()
+
 -- Durations are elapsed time, not CPU utilization. See the measurement reference.
 function JobBuilder.GetRuntimeMetrics(sinceTotals: {[string]: number}?): SharedTypes.RuntimeMetrics
 	return RuntimeMetrics.Snapshot(metrics, sinceTotals)
@@ -110,7 +112,7 @@ local function buildJob(group: Group, currentTick: number, targetCost: number, f
 		job.estimatedCost += cost
 		boidsScheduled += cellBoidCount
 		
-		if RunService:IsClient() then
+		if IS_CLIENT then
 			-- A client-side simulation always renders its own completed cell jobs.
 			-- It publishes direct local cell snapshots with no remote recipients.
 			emitSnapshot = true
@@ -134,7 +136,7 @@ local function buildJob(group: Group, currentTick: number, targetCost: number, f
 			boidCount = cellBoidCount,
 		}
 		
-		if emitSnapshot and RunService:IsServer() then
+		if emitSnapshot and not IS_CLIENT then
 			recipients[nextCell.id] = duePlayers
 		end
 
