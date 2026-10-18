@@ -20,11 +20,13 @@ Tags: boids, WorkerCore, server, client, duplicate implementation, group ID, ID 
 
 Rejected
 
-Separate server/client flocking implementations and overlapping group ID spaces.
+Separate server/client flocking implementations and overlapping group ID spaces, or inferring boid ownership from a numeric half-range.
 
 Current guardrail
 
 Both processes load WorkerCore. Server group IDs are 0-32767; client-local IDs are 32768-65535.
+
+Individual boid IDs share the full u16 space. Server reservations and settled collision eviction prevent overlap within a client runtime; IsServerBoid identifies live authoritative replicas. Delayed corrections and queued host hit reports must not treat a client-local numeric ID as authoritative.
 
 ---
 [BOIDS] Inspecting metrics through a separate require cache

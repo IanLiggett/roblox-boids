@@ -14,6 +14,8 @@ JobBuilder dispatches earliest-due cell work using free Actor capacity rather th
 
 SimulationReplication owns authoritative lifecycle/group state and reliable bootstrap. NetworkResults preserves correction source time and direct local-buffer delivery. Corrections steer simulation, not direct renderer placement. The renderer turns toward its smoothed target and moves along facing without snapshot/orientation snaps.
 
+Boid IDs share all 65,536 u16 slots in each process. The coordinator allocates server IDs from the lowest free slot and client-local IDs from the highest, using hierarchical free bitmaps. Reliable client intake reserves server IDs even while commands are queued. A collision retires the local boid through normal settlement before creating the server replica; surviving IDs never change. Group IDs retain their server/client partition. Ownership is explicit, never inferred from a boid ID's numeric range.
+
 Server.BoidQueryIndexServer owns authoritative index lifetime and copied queries. Client queries and rendered-pose reads are package-owned too. Hosts consume results without acquiring mutable storage/index ownership. Diagnostics expose values, not scheduling authority.
 
 ## Scenarios and hosts

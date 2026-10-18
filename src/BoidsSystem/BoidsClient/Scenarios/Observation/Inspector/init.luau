@@ -203,7 +203,7 @@ function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
 				if rendered.snapshotAt then ageText(math.max(0, now - rendered.snapshotAt)) else "unavailable")
 		else renderedText.Text = "Rendered motion" .. header .. "\nUnavailable / awaiting first rendered pose" end
 		clientText.Text = simulationText("Client simulation" .. header, client, if snapshot.client then snapshot.client.simulationAge else nil, if snapshot.client then snapshot.client.isAgeLowerBound else nil, nil)
-		if id and id >= 32768 then
+		if id and client and client.groupId >= 32768 then
 			serverText.Text = "Sampled server simulation" .. header .. "\nUnavailable: client-only boid"
 		elseif sample and sample.isAvailable and sample.state then
 			local delay = math.max(0, now - sample.sampledAt)

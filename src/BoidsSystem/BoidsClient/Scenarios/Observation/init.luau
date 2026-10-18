@@ -445,7 +445,7 @@ function Observation.SelectBoid(boidId: number?): ()
 	sendCommand({
 		action = "SelectBoid", sessionId = token,
 		selectionRevision = selectionRevision,
-		boidId = if boidId ~= nil and boidId < 32768 then boidId else nil,
+		boidId = if boidId ~= nil and activeBoids and activeBoids.IsServerBoid(boidId) then boidId else nil,
 	})
 	syncInspection()
 	notify("Selection")

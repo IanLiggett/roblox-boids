@@ -24,6 +24,7 @@ export type ServerObservation = ViewerControl & {
 	GetBoidObservation: (number) -> SharedTypes.BoidObservation?,
 }
 export type ClientObservation = ServerObservation & ObstacleCapture & {
+	IsServerBoid: (number) -> boolean,
 	GetGroupObservation: (number) -> SharedTypes.GroupObservation?,
 	SubscribeDeleted: (({number}) -> ()) -> (() -> ()),
 }
@@ -38,6 +39,9 @@ export type IndexSource = {
 	GetBoidModel: (number) -> number?,
 }
 export type Replication = {
+	IsServerBoid: (number) -> boolean,
+	ReserveServerBoidId: (number) -> (),
+	ReleaseServerBoidId: (number) -> (),
 	GetBoidState: (number) -> (Vector3?, Vector3?),
 	NewGroup: (number, number?, Color3?) -> Group,
 	HasBoid: (number) -> boolean,

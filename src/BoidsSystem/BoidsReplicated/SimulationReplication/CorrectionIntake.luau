@@ -12,7 +12,7 @@ export type Intake = {
 	ForEachAccepted: ((number, Vector3, Vector3, number) -> ()) -> (),
 }
 type BoidsApi = {
-	HasBoid: (number) -> boolean,
+	IsServerBoid: (number) -> boolean,
 	IsDeletionPending: (number) -> boolean,
 	SetReconciliationTargets: ({{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}}) -> (),
 }
@@ -48,7 +48,7 @@ function CorrectionIntake.New(boids: BoidsApi): Intake
 		for offset, ox, oy, oz, count in PacketCodec.ForEachCellHeader(packet) do
 			for id, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, count) do
 				local previous = targets[id]
-				if not boids.HasBoid(id) or boids.IsDeletionPending(id)
+				if not boids.IsServerBoid(id) or boids.IsDeletionPending(id)
 					or sourceTime <= (retiredAt[id] or -math.huge)
 					or (previous and sourceTime <= previous.snapshotTime) then continue end
 				local position = Vector3.new(ox + px, oy + py, oz + pz)

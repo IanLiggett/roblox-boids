@@ -466,7 +466,13 @@ local function applySpawnBatch(boids: BoidsApi, groups: {[number]: Group}, group
 	for row = 0, buffer.len(data) // SPAWN_ROW_BYTES - 1 do
 		local offset = row * SPAWN_ROW_BYTES
 		local id = buffer.readu16(data, offset + BOID_ID_OFFSET)
+		-- Reserve the replacement before asking normal deletion to settle the
+		-- original local lifetime. Repeated replay rows never delete a replica.
+		if boids.HasBoid(id) and not boids.IsServerBoid(id) then
+			boids.QueueDeleteBoid(id)
+		end
 		if boids.IsDeletionPending(id) then
+			if not pending[id] then boids.ReserveServerBoidId(id) end
 			pending[id] = {group=group, data=data, offset=offset}
 		elseif not boids.HasBoid(id) then
 			applySpawnRow(boids, group, data, offset)
@@ -597,9 +603,10 @@ function SimulationReplication.StartClient(boids: BoidsApi): ()
 		elseif kind == "DeleteBoids" then
 			if type(a) == "table" then
 				for _, boidId in a :: {number} do
+					if pendingSpawns[boidId] then boids.ReleaseServerBoidId(boidId) end
 					pendingSpawns[boidId], boidGroups[boidId] = nil, nil
 					corrections.Retire(boidId, if type(b) == "number" then b else nil)
-					boids.QueueDeleteBoid(boidId)
+					if boids.IsServerBoid(boidId) then boids.QueueDeleteBoid(boidId) end
 				end
 			end
 		elseif kind == "DestroyGroup" then
@@ -607,6 +614,7 @@ function SimulationReplication.StartClient(boids: BoidsApi): ()
 			for id, groupId in boidGroups do
 				if groupId == a then
 					corrections.Retire(id, nil)
+					if pendingSpawns[id] then boids.ReleaseServerBoidId(id) end
 					pendingSpawns[id], boidGroups[id] = nil, nil
 				end
 			end
@@ -623,6 +631,10 @@ function SimulationReplication.StartClient(boids: BoidsApi): ()
 	-- A replacement reliable group must wait for any already-committing old
 	-- lifetime to settle. Preserve reliable command order while it is deferred.
 	local stateQueue: {{unknown}} = {}
+	local function reserveSpawnRows(kind: unknown, data: unknown, reserve: (number) -> ()): ()
+		if kind ~= "Boids" or typeof(data) ~= "buffer" or buffer.len(data) % SPAWN_ROW_BYTES ~= 0 then return end
+		for offset = 0, buffer.len(data) - 1, SPAWN_ROW_BYTES do reserve(buffer.readu16(data, offset)) end
+	end
 	local draining = false
 	local function drainState(): ()
 		if draining then return end
@@ -632,10 +644,14 @@ function SimulationReplication.StartClient(boids: BoidsApi): ()
 			if message[1] == "Group" and boids.IsGroupRetiring(message[2] :: number) then break end
 			table.remove(stateQueue, 1)
 			applyState(table.unpack(message, 1, 5))
+			reserveSpawnRows(message[1], message[3], boids.ReleaseServerBoidId)
 		end
 		draining = false
 	end
 	simulationState.OnClientEvent:Connect(function(kind: string, a: unknown, b: unknown, c: unknown, d: unknown): ()
+		-- Protect even rows queued behind a retiring group. Occupancy alone
+		-- cannot distinguish these future authoritative IDs from local space.
+		reserveSpawnRows(kind, b, boids.ReserveServerBoidId)
 		table.insert(stateQueue, {kind, a, b, c, d})
 		drainState()
 	end)
@@ -644,9 +660,11 @@ function SimulationReplication.StartClient(boids: BoidsApi): ()
 		for id, pending in pendingSpawns do
 			if groups[pending.group.id] ~= pending.group then
 				pendingSpawns[id] = nil
+				boids.ReleaseServerBoidId(id)
 			elseif not boids.IsDeletionPending(id) then
 				pendingSpawns[id] = nil
 				if not boids.HasBoid(id) then applySpawnRow(boids, pending.group, pending.data, pending.offset) end
+				boids.ReleaseServerBoidId(id)
 			end
 		end
 	end)
