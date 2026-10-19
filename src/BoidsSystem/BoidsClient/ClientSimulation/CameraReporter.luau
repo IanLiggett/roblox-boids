@@ -1,7 +1,8 @@
 --!strict
 -- Sole client camera-report policy. Never writes a camera or rendering state.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local cameraUpdate: UnreliableRemoteEvent = BoidsReplicated.Remotes.CameraUpdate
 local CameraReporter = {}
 local isStarted = false

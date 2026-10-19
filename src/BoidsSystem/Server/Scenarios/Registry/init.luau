@@ -1,7 +1,8 @@
 --!strict
 -- Lookup, trusted runtime configuration and one-session scenario orchestration.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local ScenarioRuntime = require(BoidsReplicated.Scenarios.Runtime)
 local Delivery = require(BoidsReplicated.Scenarios.Delivery)
 local ScenarioTypes = require(BoidsReplicated.Scenarios.Types)

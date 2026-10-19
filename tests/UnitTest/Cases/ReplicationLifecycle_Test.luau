@@ -3,7 +3,8 @@
 local UnitTest = require(script.Parent.Parent.RunUnitTest)
 
 return function(t: UnitTest.Context): ()
-	local package = game.ReplicatedStorage.BoidsReplicated
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 	local network = require(package.NetworkResults)
 	local intakeModule = require(package.SimulationReplication.CorrectionIntake)
 	local replay = require(package.SimulationReplication.Replay)

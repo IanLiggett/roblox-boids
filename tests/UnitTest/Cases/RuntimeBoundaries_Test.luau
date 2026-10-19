@@ -2,7 +2,8 @@
 local UnitTest = require(script.Parent.Parent.RunUnitTest)
 
 return function(t: UnitTest.Context): ()
-	local package = game.ReplicatedStorage.BoidsReplicated
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 	local diagnostics = require(package.Boids.Diagnostics)
 	local benchmarkers = require(package.Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
 	local SharedTypes = require(package.SharedTypes)

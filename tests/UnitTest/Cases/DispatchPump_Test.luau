@@ -2,7 +2,9 @@
 local UnitTest = require(script.Parent.Parent.RunUnitTest)
 
 return function(t: UnitTest.Context): ()
-	local DispatchPump = require(game.ReplicatedStorage.BoidsReplicated.Boids.JobBuilder.DispatchPump)
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+	local DispatchPump = require(package.Boids.JobBuilder.DispatchPump)
 	type Callback = () -> ()
 	type Timer = {thread: thread, callback: Callback, seconds: number, isCancelled: boolean}
 	type Observation = {trigger: DispatchPump.Trigger, reason: DispatchPump.StopReason, seconds: number}

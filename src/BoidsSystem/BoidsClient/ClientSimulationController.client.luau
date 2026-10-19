@@ -9,7 +9,8 @@ spawns, and benchmark collection are intentionally delegated to Testing.
 -- Load the selected renderer before the simulation can publish local state.
 -- This must match ClientRendererBridge so only one renderer exists per client.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 
 -- ClientSimulation.Start composes and binds the renderer before simulation.
 

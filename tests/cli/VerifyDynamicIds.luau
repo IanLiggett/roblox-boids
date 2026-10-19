@@ -30,7 +30,10 @@ local allocator: AllocatorApi = load(base .. "Boids/IdAllocator.luau", {}) :: Al
 local package = {Boids = {IdAllocator = allocator}}
 local function identity<T>(value: T): T return value end
 local runAllocatorCases = load(root .. "tests/UnitTest/Cases/IdAllocator_Test.luau", {
-	game = {ReplicatedStorage = {BoidsReplicated = package}}, require = identity, task = task,
+	game = {ReplicatedStorage = {
+		BoidsReplicated = package,
+		WaitForChild = function(_self: unknown, _name: string): typeof(package) return package end,
+	}}, require = identity, task = task,
 }) :: (typeof(t)) -> ()
 runAllocatorCases(t)
 

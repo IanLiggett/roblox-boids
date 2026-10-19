@@ -2,7 +2,8 @@
 local UnitTest = require(script.Parent.Parent.RunUnitTest)
 
 return function(t: UnitTest.Context): ()
-	local package = game.ReplicatedStorage.BoidsReplicated
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 	local codec = require(package.SnapshotCodec)
 	local network = require(package.NetworkResults)
 	t.test("matches transport snapshot bytes", function()

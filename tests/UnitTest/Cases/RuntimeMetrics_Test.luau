@@ -2,8 +2,10 @@
 local UnitTest = require(script.Parent.Parent.RunUnitTest)
 
 return function(t: UnitTest.Context): ()
- local Metrics = require(game.ReplicatedStorage.BoidsReplicated.RuntimeMetrics)
- local SharedTypes = require(game.ReplicatedStorage.BoidsReplicated.SharedTypes)
+ local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+  :: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+ local Metrics = require(package.RuntimeMetrics)
+ local SharedTypes = require(package.SharedTypes)
  local function measurement(): SharedTypes.WorkerMeasurement
   return {detailed=true,executionMs=0,snapshotMs=0,scheduledBoids=0,observedBoids=0,processedBoids=0,skippedBoids=0,survivingBoids=0,migratedBoids=0,returnedSourceBoids=0,candidateExaminations=0,acceptedDirectInteractions=0,aggregateBucketVisits=0,acceptedAggregatePopulation=0,obstacleForwardRays=0,obstacleEscapeRays=0,obstacleDetourStarts=0,obstacleDetourUpdates=0,obstacleSoftFallbacks=0,pages=0,inputBufferBytes=0,outputBufferBytes=0}
  end

@@ -2,7 +2,9 @@
 -- Formatting and opt-in output only. The running coordinator owns all reads.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local SharedTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").SharedTypes)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local SharedTypes = require(BoidsReplicated.SharedTypes)
 
 local Logs = {printInterval = 5}
 type Reader = {GetRuntimeDiagnostics: () -> SharedTypes.RuntimeDiagnostics}

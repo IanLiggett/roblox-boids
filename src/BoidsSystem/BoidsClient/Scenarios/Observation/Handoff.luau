@@ -5,8 +5,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
-local HostHooks = require(ReplicatedStorage:WaitForChild("BoidsReplicated").Scenarios.HostHooks)
-local ObservationTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").Scenarios.ObservationTypes)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local HostHooks = require(BoidsReplicated.Scenarios.HostHooks)
+local ObservationTypes = require(BoidsReplicated.Scenarios.ObservationTypes)
 local player: Player = Players.LocalPlayer
 local CameraReporter = require(script.Parent.Parent.Parent.ClientSimulation.CameraReporter)
 local Types = require(script.Parent.Types)

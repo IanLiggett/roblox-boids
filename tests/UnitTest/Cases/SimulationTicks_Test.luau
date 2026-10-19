@@ -3,7 +3,9 @@
 local UnitTest = require(script.Parent.Parent.RunUnitTest)
 
 return function(t: UnitTest.Context): ()
-	local Quantization = require(game.ReplicatedStorage.BoidsReplicated.Quantization)
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+	local Quantization = require(package.Quantization)
 
 	t.test("background prediction preserves twelve seconds plus scheduling delay", function()
 		t.expect.equal(Quantization.TickDeltaSeconds(25261, 24539), 722 / 60)

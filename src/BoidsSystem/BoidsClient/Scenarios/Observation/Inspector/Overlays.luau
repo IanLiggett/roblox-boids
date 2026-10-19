@@ -2,7 +2,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local SharedTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").SharedTypes)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local SharedTypes = require(BoidsReplicated.SharedTypes)
 local Renderer = require(script.Parent.Parent.Parent.Parent.BoidsRenderer)
 local Overlays = {}
 export type ObstacleLayers = { showProbes: boolean, showCandidates: boolean, showMovement: boolean }

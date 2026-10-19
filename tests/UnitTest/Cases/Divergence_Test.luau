@@ -2,7 +2,9 @@
 local UnitTest = require(script.Parent.Parent.RunUnitTest)
 
 return function(t: UnitTest.Context): ()
- local Divergence = require(game.ReplicatedStorage.BoidsReplicated.Testing.PerformanceTelemetry.Divergence)
+ local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+  :: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+ local Divergence = require(package.Testing.PerformanceTelemetry.Divergence)
  t.test("divergence time-aligns fresh accepted corrections without changing state", function()
   local reads = 0
   local result = Divergence.Read(function(visit)

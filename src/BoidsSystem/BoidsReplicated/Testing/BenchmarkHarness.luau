@@ -8,7 +8,8 @@ scenario/Actor work outside the reusable simulation package.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BenchmarkConfig = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BenchmarkConfig = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 
 local RuntimeConfig = require(BenchmarkConfig.RuntimeConfig)
 local BenchmarkHarness = {}

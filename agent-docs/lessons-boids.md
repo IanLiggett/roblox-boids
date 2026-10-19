@@ -182,3 +182,21 @@ Generic runtime interpreting benchmark names/attributes or importing scenario-sp
 Current guardrail
 
 Testing resolves one generic startup configuration and shares its resolved values with metadata. All boid-specific query operations remain package-owned, while the game owns report tolerance/authorization/damage. The query owner takes the existing running handle and exposes copied reads, with fresh seeding and old-owner callback rejection after Stop. RuntimeTypes owns generic capabilities; Scenarios.Types/Delivery own metadata/replay/late-handler policy through the existing reliable control-plane extension. Install Delivery before intake and preserve runtime-ID context plus once-per-name initialization.
+
+---
+
+[TYPING] Bootstrap relocation must retain edit-time import types
+
+Tags: types, Studio, require, WaitForChild, BoidsReplicated, bootstrap, sourcemap
+
+Rejected
+
+Analyzing only a sourcemap with runtime service aliases, or casting a retrieved module to generic ModuleScript.
+
+Reason
+
+Runtime aliases can make external checks pass while Studio's edit-time hierarchy still resolves relocated package lookups as Instance and loses their exported types. A generic ModuleScript cast also loses the concrete module contract.
+
+Current guardrail
+
+Preserve runtime WaitForChild lookups, but annotate the retrieved folder/module with typeof pointing at its concrete edit-time instance under ServerScriptService.BoidsSystem. Test the ordinary edit-time sourcemap without runtime aliases. These annotations must live in the source shipped to Studio, not only in external checker configuration.

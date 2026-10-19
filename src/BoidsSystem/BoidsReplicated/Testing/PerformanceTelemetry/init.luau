@@ -113,22 +113,18 @@ local function standardDeviation(values: {number}, average: number?): number?
 end
 
 local function totalMemoryMb(): number?
-	local ok, value = pcall(function()
+	local ok, value = pcall(function(): number
 		return Stats:GetTotalMemoryUsageMb()
 	end)
 	return if ok and type(value) == "number" then value else nil
 end
 
 local function networkKbps(name: string): number?
-	local ok, value = pcall(function()
+	local ok, value = pcall(function(): number?
 		-- ServerStatsItem is the network summary exposed in both Studio server and
 		-- client contexts; its values are directional for the current process.
 		local networkStats = Stats :: Stats & {Network: Instance & {ServerStatsItem: Instance}}
-		-- StatsItem:GetValue is present at runtime but omitted by the engine's
-		-- public API definitions. Keep the hidden capability at this read boundary.
-		local item = networkStats.Network.ServerStatsItem:FindFirstChild(name) :: (StatsItem & {
-			GetValue: (StatsItem) -> number,
-		})?
+		local item = networkStats.Network.ServerStatsItem:FindFirstChild(name) :: StatsItem?
 		return item and item:GetValue()
 	end)
 	return if ok and type(value) == "number" then value else nil
@@ -145,7 +141,7 @@ function PerformanceTelemetry.Start(
 	sampleSeconds: number,
 	divergenceProvider: (() -> DivergenceSample?)?,
 	benchmarkMetadata: {[string]: string | number | boolean}?
-)
+): ()
 	local environment = if RunService:IsServer() then "server" else "client"
 	local key = label .. ":" .. environment
 	if started[key] then
@@ -248,7 +244,8 @@ function PerformanceTelemetry.Start(
 			actorCount = summary.actorCount, groupCount = summary.groupCount,
 			populationAtEnd = summary.population, lodPreset = LODConfig.GetPresetName(),
 			detailedCountersAvailable = endMetrics.mode == "detailed",
-			studioBuild = version(), executionSide = environment,
+			-- Benchmark metadata may supply the externally recorded engine build.
+			studioBuild = "unrecorded", executionSide = environment,
 			isStudio = RunService:IsStudio(), warmupSeconds = warmupSeconds,
 			requestedSampleSeconds = sampleSeconds,
 			nativeStatus = "unverified; --!native is not execution evidence",

@@ -133,7 +133,7 @@ local function flushPlayer(userId: number, state: PlayerPacketAccumulator): ()
 	end
 	table.sort(sourceTimes)
 
-	local player: Player? = Players:GetPlayerByUserId(userId)
+	local player: Player? = Players:GetPlayerByUserId(User.fromId(userId))
 	for _, sourceTime in sourceTimes do
 		if not player or packetTokens < 1 then break end
 		local packetStart = os.clock()
@@ -191,7 +191,7 @@ end
 
 function ServerTransport.EnqueueSimulationSnapshotForPlayers(players: {number}, simulationSnapshot: SimulationSnapshot, now: number): ()
 	for _, userId: number in players do
-		if not Players:GetPlayerByUserId(userId) then continue end
+		if not Players:GetPlayerByUserId(User.fromId(userId)) then continue end
 		local state = getOrCreateAccumulator(userId)
 
 		for cellId, cellSnapshot in simulationSnapshot do

@@ -5,8 +5,10 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
-local SharedTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").SharedTypes)
-local ObservationTypes = require(ReplicatedStorage.BoidsReplicated.Scenarios.ObservationTypes)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local SharedTypes = require(BoidsReplicated.SharedTypes)
+local ObservationTypes = require(BoidsReplicated.Scenarios.ObservationTypes)
 local Types = require(script.Parent.Types)
 local Inspection = require(script.Parent.Inspection)
 local Camera = require(script.Parent.Camera)
@@ -49,7 +51,7 @@ local function simulationText(title: string, state: SharedTypes.BoidObservation?
 end
 
 function Inspector.Start(observation: Api, panel: ScrollingFrame): () -> ()
-	local player: Player = Players.LocalPlayer
+	local player: Player = Players.LocalPlayer :: Player
 	local gui: ScreenGui = panel:FindFirstAncestorOfClass("ScreenGui") :: ScreenGui
 	local function label(name: string, y: number, height: number): TextLabel
 		local text: TextLabel = Instance.new("TextLabel")

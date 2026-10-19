@@ -1,7 +1,8 @@
 --!strict
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Config = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local Config = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local RendererBenchmark = {}
 type Snapshot = {
  samples: number, rendererMsTotal: number, rendererMsMax: number,

@@ -1,9 +1,11 @@
 --!strict
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local SharedTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").SharedTypes)
-local RuntimeTypes = require(ReplicatedStorage.BoidsReplicated.RuntimeTypes)
-local Diagnostics = require(ReplicatedStorage.BoidsReplicated.Boids.ObstacleDiagnostics)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local SharedTypes = require(BoidsReplicated.SharedTypes)
+local RuntimeTypes = require(BoidsReplicated.RuntimeTypes)
+local Diagnostics = require(BoidsReplicated.Boids.ObstacleDiagnostics)
 local Obstacle = {}
 
 export type State = {
