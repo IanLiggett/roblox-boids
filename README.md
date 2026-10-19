@@ -46,4 +46,6 @@ The standalone project maps `ServerStorage.UnitTest`. Before Play, generate its 
 
 For the full suite, pass `nil, 12` to the runner: the actual five-second Actor deadline test exceeds the default five-second per-test timeout. With Lune 0.11.0, run `lune run tests/cli/VerifyDynamicIds.luau` from this package root for isolated allocation, production-coordinator, and client-intake checks without Studio. The script also accepts the host root as its working directory.
 
+The typed WorkerCore and scheduler fixtures are also checked into source so Studio can analyze their contracts before Play. Run `lune run tests/cli/VerifyFixtureSources.luau` to check that they match production source and the Studio generators. `--emit` prints replacement sources as JSON for a reviewed update; it does not write files. The scheduler fixture extracts only the production dispatch slice, with a typed injected environment. Worker and execution tests still require separate clones to preserve module-local isolation.
+
 Benchmarker and BinaryHeaps are pinned source copies under vendor, including original metadata. Redistribution rights and a package license need review before public publication; local extraction grants no new license.

@@ -5,10 +5,12 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local ScenarioModules = ReplicatedStorage:WaitForChild("BoidsReplicated"):WaitForChild("Scenarios")
-local RuntimeTypes = require(ScenarioModules.Parent.RuntimeTypes)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local ScenarioModules = BoidsReplicated:WaitForChild("Scenarios") :: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated.Scenarios)
+local RuntimeTypes = require(BoidsReplicated.RuntimeTypes)
 local ScenarioTypes = require(ScenarioModules.Types)
-local ObservationTypes = require(ScenarioModules:WaitForChild("ObservationTypes"))
+local ObservationTypes = require(ScenarioModules:WaitForChild("ObservationTypes") :: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated.Scenarios.ObservationTypes))
 local Config = require(script.Parent.ObservationConfig)
 local Age = require(ScenarioModules.ObservationAge)
 local HostHooks = require(ScenarioModules.HostHooks)
@@ -36,7 +38,7 @@ type RateState = { tokens: number, updatedAt: number }
 local requestRemote: RemoteEvent = ScenarioModules:WaitForChild("ObservationRequest") :: RemoteEvent
 local stateRemote: RemoteEvent = ScenarioModules:WaitForChild("ObservationState") :: RemoteEvent
 local sampleRemote: UnreliableRemoteEvent = ScenarioModules:WaitForChild("ObservationSample") :: UnreliableRemoteEvent
-local cameraRemote: UnreliableRemoteEvent = ScenarioModules.Parent.Remotes.CameraUpdate
+local cameraRemote: UnreliableRemoteEvent = BoidsReplicated.Remotes.CameraUpdate
 local activeContext: ScenarioContext? = nil
 local activeBoids: BoidsApi? = nil
 local sessions: {[Player]: Session} = {}

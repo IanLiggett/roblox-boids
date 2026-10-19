@@ -8,7 +8,8 @@ scenario/Actor work outside the reusable simulation package.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BenchmarkConfig = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BenchmarkConfig = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 
 local RuntimeConfig = require(BenchmarkConfig.RuntimeConfig)
 local BenchmarkHarness = {}
@@ -28,7 +29,8 @@ export type PairEntry = {
 	variant: "baseline" | "candidate",
 }
 
-local profiles = {
+type Profile = {warmupSeconds: number, sampleSeconds: number, pairCount: number}
+local profiles: {[string]: Profile} = {
 	screening = { warmupSeconds = 15, sampleSeconds = 45, pairCount = 3 },
 	confirmation = { warmupSeconds = 30, sampleSeconds = 90, pairCount = 5 },
 }
@@ -47,7 +49,7 @@ end
 function BenchmarkHarness.GetRuntimeConfiguration(scenarioName: string): RuntimeConfig.Resolved
 	local cached = runtimeConfigurations[scenarioName]
 	if cached then return cached end
-	local options: RuntimeConfig.Options = {}
+	local options: {actorCount: number?, targetActorJobMs: number?} = {}
 	if string.find(scenarioName, "^Benchmark") then
 		local actorCount = BenchmarkConfig:GetAttribute("BoidBenchmarkActorCount")
 		local targetMs = BenchmarkConfig:GetAttribute("BoidBenchmarkTargetActorJobMs")
@@ -109,7 +111,7 @@ end
 
 function BenchmarkHarness.CreateAlternatingPlan(pairCount: number): {PairEntry}
 	assert(pairCount > 0 and pairCount % 1 == 0, "pairCount must be a positive integer")
-	local entries: {PairEntry} = table.create(pairCount * 2)
+	local entries: {PairEntry} = table.create(pairCount * 2) :: {PairEntry}
 	for pair = 1, pairCount do
 		local first = if pair % 2 == 1 then "baseline" else "candidate"
 		entries[#entries + 1] = { pair = pair, variant = first }

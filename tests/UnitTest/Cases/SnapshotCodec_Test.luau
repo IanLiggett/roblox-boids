@@ -1,6 +1,9 @@
 --!strict
-return function(t: any): ()
-	local package = game.ReplicatedStorage.BoidsReplicated
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 	local codec = require(package.SnapshotCodec)
 	local network = require(package.NetworkResults)
 	t.test("matches transport snapshot bytes", function()
@@ -68,7 +71,8 @@ return function(t: any): ()
 			network.PublishSimulationSnapshot({}, time)
 			network.PublishSimulationSnapshot({[11] = empty}, time)
 			t.expect.equal(next(seen), nil)
-		end, debug.traceback)
+			return nil
+		end, function(problem: unknown): string return debug.traceback(tostring(problem)) end)
 		bridge.ConsumeCellSnapshot = oldConsume
 		network.ConvertSimulationSnapshotToPackets = oldConvert
 		assert(ok, failure)

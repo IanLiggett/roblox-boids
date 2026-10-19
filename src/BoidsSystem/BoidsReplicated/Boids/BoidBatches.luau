@@ -77,7 +77,7 @@ local function rowOffset(index: number): number
 	return index * BOID_STATS_ROW_SIZE
 end
 
-local function writeBoidRow(data: buffer, index: number, boidId: number, maxSpeed: number, minSpeed: number, sight: number, avoidance: number, separation: number, repulsion: number, repulsionStrength: number, alignment: number, cohesion: number, targetBias: number)
+local function writeBoidRow(data: buffer, index: number, boidId: number, maxSpeed: number, minSpeed: number, sight: number, avoidance: number, separation: number, repulsion: number, repulsionStrength: number, alignment: number, cohesion: number, targetBias: number): ()
 	StatsCodec.WriteBoidRow(data, index, boidId, maxSpeed, minSpeed, sight, avoidance, separation, repulsion, repulsionStrength, alignment, cohesion, targetBias)
 end
 
@@ -155,7 +155,7 @@ function BoidBatches.AddBoidToBatch(
 	targetBias: number,
 	boidModel:BoidModel?,
 	lifetime: number
-)
+): ()
 	assert(batches[batch.id] == batch, "Cannot append to a retired stats batch")
 	if batch.boidCount >= batch.batchSize then
 		BoidBatches.SendBatch(batch)
@@ -210,7 +210,7 @@ function BoidBatches.DestroyBatch(batch: BoidsStatsBatch): ()
 	batch.boidCount = 0
 end
 
-function BoidBatches.SendBatch(batch: BoidsStatsBatch)
+function BoidBatches.SendBatch(batch: BoidsStatsBatch): ()
 	if batches[batch.id] ~= batch then return end
 	local boidCount: number = batch.boidCount
 	if boidCount <= 0 then

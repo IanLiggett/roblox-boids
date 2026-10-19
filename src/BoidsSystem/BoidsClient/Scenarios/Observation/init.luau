@@ -2,9 +2,10 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HostHooks = require(ReplicatedStorage:WaitForChild("BoidsReplicated").Scenarios.HostHooks)
 
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local HostHooks = require(BoidsReplicated.Scenarios.HostHooks)
 local RuntimeTypes = require(BoidsReplicated.RuntimeTypes)
 local ScenarioTypes = require(BoidsReplicated.Scenarios.Types)
 local ObservationTypes = require(BoidsReplicated.Scenarios.ObservationTypes)
@@ -34,7 +35,7 @@ local localGroupsById: {[number]: Group} = {}
 type SessionState = ObservationTypes.SessionState
 type ServerSample = ObservationTypes.ServerSample
 
-local localPlayer: Player = Players.LocalPlayer
+local localPlayer: Player = Players.LocalPlayer :: Player
 local scenarioModules: Folder = BoidsReplicated.Scenarios
 local requestRemote: RemoteEvent = scenarioModules:WaitForChild("ObservationRequest") :: RemoteEvent
 local stateRemote: RemoteEvent = scenarioModules:WaitForChild("ObservationState") :: RemoteEvent

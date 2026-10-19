@@ -2,7 +2,8 @@
 -- Owns the authoritative derived index and its simulation subscriptions.
 -- Game validation policy consumes only the query facade below.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local BoidCollisionConfig = require(BoidsReplicated.BoidCollisionConfig)
 local BoidQueryIndex = require(BoidsReplicated.BoidQueryIndex)
 local QueryIndexConfig = require(BoidsReplicated.QueryIndexConfig)

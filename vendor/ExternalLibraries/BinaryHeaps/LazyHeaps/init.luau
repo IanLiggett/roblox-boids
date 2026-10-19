@@ -41,7 +41,7 @@ module.empty = BinaryHeaps.empty
 
 module.push = BinaryHeaps.push
 
-local function cleanHeap(lazyHeap: LazyHeap)
+local function cleanHeap(lazyHeap: LazyHeap): ()
 	local id: number?
 	while lazyHeap.size > 0 do
 		id = BinaryHeaps.peekValue(lazyHeap)

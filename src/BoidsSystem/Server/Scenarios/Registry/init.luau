@@ -1,7 +1,8 @@
 --!strict
 -- Lookup, trusted runtime configuration and one-session scenario orchestration.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local ScenarioRuntime = require(BoidsReplicated.Scenarios.Runtime)
 local Delivery = require(BoidsReplicated.Scenarios.Delivery)
 local ScenarioTypes = require(BoidsReplicated.Scenarios.Types)
@@ -42,10 +43,13 @@ function Registry.StartServerScenario(scenarioName: string, boids: BoidsApi, pla
 	local boidIds: {number} = {}
 	local context: ScenarioContext = { name = scenario.name, serverGroups = {} }
 	if spawnServerGroups then
-		local serverGroups = scenario.serverGroups
-		if type(serverGroups) == "function" then
+		local groupSource = scenario.serverGroups
+		local serverGroups: {ScenarioTypes.GroupDefinition}
+		if type(groupSource) == "function" then
 			assert(player, `Scenario {scenarioName} requires a player target`)
-			serverGroups = serverGroups(player)
+			serverGroups = groupSource(player)
+		else
+			serverGroups = groupSource
 		end
 
 		for index, spawned in ScenarioRuntime.SpawnGroups(boids, serverGroups) do

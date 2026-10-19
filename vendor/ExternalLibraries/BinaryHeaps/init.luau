@@ -55,7 +55,7 @@ local function getHeapPair(binaryHeap: BinaryHeap, index: number): (number, numb
 		buffer.readf64(binaryHeap.values, offset)
 end
 
-local function ensureCapacity(binaryHeap: BinaryHeap, requiredIndex: number)
+local function ensureCapacity(binaryHeap: BinaryHeap, requiredIndex: number): ()
 	if (requiredIndex < binaryHeap.capacity) then
 		return
 	end
@@ -83,7 +83,7 @@ local function ensureCapacity(binaryHeap: BinaryHeap, requiredIndex: number)
 	binaryHeap.capacity = capacity
 end
 
-local function setHeapPair(binaryHeap: BinaryHeap, index: number, priority: number, value: number)
+local function setHeapPair(binaryHeap: BinaryHeap, index: number, priority: number, value: number): ()
 	ensureCapacity(binaryHeap, index)
 
 	local offset: number = index * SLOT_SIZE
@@ -115,7 +115,7 @@ local function right(binaryHeap: BinaryHeap, index: number): number?
 	return nil
 end
 
-local function swap(binaryHeap: BinaryHeap, index1: number, index2: number)
+local function swap(binaryHeap: BinaryHeap, index1: number, index2: number): ()
 	local priority1: number, value1: number = getHeapPair(binaryHeap, index1)
 	local priority2: number, value2: number = getHeapPair(binaryHeap, index2)
 
@@ -123,7 +123,7 @@ local function swap(binaryHeap: BinaryHeap, index1: number, index2: number)
 	setHeapPair(binaryHeap, index2, priority1, value1)
 end
 
-local function upwardsHeapify(binaryHeap: BinaryHeap, index: number)
+local function upwardsHeapify(binaryHeap: BinaryHeap, index: number): ()
 	local parentIndex: number? = parent(index)
 	if parentIndex and binaryHeap.compareWith(getHeapPriority(binaryHeap, parentIndex), getHeapPriority(binaryHeap, index)) > 0 then
 		swap(binaryHeap, index, parentIndex)
@@ -131,7 +131,7 @@ local function upwardsHeapify(binaryHeap: BinaryHeap, index: number)
 	end
 end
 
-local function downwardsHeapify(binaryHeap: BinaryHeap, index: number)
+local function downwardsHeapify(binaryHeap: BinaryHeap, index: number): ()
 	local smallest: number = index
 	local leftIndex: number? = left(binaryHeap, index)
 	local rightIndex: number? = right(binaryHeap, index)
@@ -192,7 +192,7 @@ function module.empty(binaryHeap: BinaryHeap): boolean
 	return binaryHeap.size == 0
 end
 
-function module.push(binaryHeap: BinaryHeap, priority: number, value: number)
+function module.push(binaryHeap: BinaryHeap, priority: number, value: number): ()
 	local newIndex: number = binaryHeap.size
 	setHeapPair(binaryHeap, newIndex, priority, value)
 	binaryHeap.size += 1
@@ -232,7 +232,7 @@ function module.peekValue(binaryHeap: BinaryHeap): number?
 	return getHeapValue(binaryHeap, 0)
 end
 
-function module.clear(binaryHeap: BinaryHeap)
+function module.clear(binaryHeap: BinaryHeap): ()
 	binaryHeap.size = 0
 end
 

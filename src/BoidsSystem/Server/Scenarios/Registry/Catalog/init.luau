@@ -1,6 +1,7 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local ScenarioTypes = require(BoidsReplicated.Scenarios.Types)
 local SharedTypes = require(BoidsReplicated.SharedTypes)
 local Types = require(script.Parent.Types)
@@ -31,13 +32,13 @@ local DEFAULT_TUNING = {
 	maxSpeed = 20,--20,
 	minSpeed = 3,--3,
 	sight = 60,--32,
-	avoidance = 30, --35,
-	separation = 200, --100,
+	avoidance = 40, --35,
+	separation = 100, --100,
 	repulsion = 0,
 	repulsionStrength = 3,
-	alignment = 100,
-	cohesion = 100,
-	targetBias = 10,
+	alignment = 25,
+	cohesion = 25,
+	targetBias = 25,
 }
 
 local POLAR_SPHERE_CENTER = Vector3.new(150, 0, 0)
@@ -117,10 +118,12 @@ local function makePolarFigureEightPath(): {PathNode}
 end
 
 local function makeLegacyGravityWells(path: {PathNode}): {GravityWellDefinition}
+	-- These catalog paths are built from Vector3s; the shared PathNode also
+	-- permits dynamic BaseParts for other scenarios.
 	local wells: {GravityWellDefinition} = {}
 	for nodeIndex = 1, #path, 4 do
 		table.insert(wells, {
-			position = path[nodeIndex].Position,
+			position = path[nodeIndex].Position :: Vector3,
 			strength = 5000,
 			influenceRadius = 160,
 		})
@@ -179,7 +182,7 @@ Catalog.NewScenario(
 		{
 			name = "LegacyServerHorizontal",
 			boidCount = 5000,
-			center = legacyHorizontalPath[1].Position,
+			center = legacyHorizontalPath[1].Position :: Vector3,
 			spread = 450,
 			seed = 1,
 			color = Color3.fromRGB(55, 220, 90),
@@ -193,7 +196,7 @@ Catalog.NewScenario(
 		{
 			name = "LegacyServerVertical",
 			boidCount = 5000,
-			center = legacyVerticalPath[1].Position,
+			center = legacyVerticalPath[1].Position :: Vector3,
 			spread = 45,
 			seed = 2,
 			color = Color3.fromRGB(235, 70, 70),
@@ -209,7 +212,7 @@ Catalog.NewScenario(
 		{
 			name = "LegacyClientHorizontal",
 			boidCount = 5000,
-			center = legacyHorizontalPath[1].Position,
+			center = legacyHorizontalPath[1].Position :: Vector3,
 			spread = 450,
 			seed = 1,
 			color = Color3.fromRGB(50, 130, 255),
@@ -223,7 +226,7 @@ Catalog.NewScenario(
 		{
 			name = "LegacyClientVertical",
 			boidCount = 5000,
-			center = legacyVerticalPath[1].Position,
+			center = legacyVerticalPath[1].Position :: Vector3,
 			spread = 45,
 			seed = 2,
 			color = Color3.fromRGB(245, 220, 55),
@@ -401,7 +404,7 @@ Catalog.NewScenario(
 		for index, target in targets do
 			groups[index] = {
 				name = "RandomTargetGroup_" .. index,
-				boidCount = 4000, center = target.Position, spread = 40,
+				boidCount = 2000, center = target.Position, spread = 40,
 				seed = 20000 + index, color = target.Color,
 				tuning = DEFAULT_TUNING, target = target,
 			}
@@ -433,7 +436,7 @@ Catalog.NewScenario(
 			{
 				name = "ObstacleWall",
 				boidCount = 5000,
-				center = wallPath[1].Position,
+				center = wallPath[1].Position :: Vector3,
 				spread = 16,
 				seed = 51001,
 				color = Color3.fromRGB(75, 210, 255),
@@ -446,7 +449,7 @@ Catalog.NewScenario(
 			{
 				name = "ObstacleCorner",
 				boidCount = 5000,
-				center = cornerPath[1].Position,
+				center = cornerPath[1].Position :: Vector3,
 				spread = 16,
 				seed = 51002,
 				color = Color3.fromRGB(255, 175, 70),
@@ -459,7 +462,7 @@ Catalog.NewScenario(
 			{
 				name = "ObstacleGap",
 				boidCount = 5000,
-				center = gapPath[1].Position,
+				center = gapPath[1].Position :: Vector3,
 				spread = 7,
 				seed = 51003,
 				color = Color3.fromRGB(120, 235, 120),
@@ -490,7 +493,7 @@ Catalog.NewScenario(
 			{
 				name = "PolarSphereCrossing",
 				boidCount = 5000,
-				center = crossingPath[1].Position,
+				center = crossingPath[1].Position :: Vector3,
 				spread = 16,
 				seed = 51004,
 				color = Color3.fromRGB(75, 210, 255),

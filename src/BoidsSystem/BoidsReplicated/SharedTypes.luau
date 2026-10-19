@@ -3,8 +3,8 @@
 local BoidsReplicated = script.Parent
 local Dependencies = BoidsReplicated.Dependencies
 
-local BinaryHeaps = require(Dependencies.BinaryHeaps.Value)
-local Benchmarkers = require(Dependencies.Benchmarker.Value)
+local BinaryHeaps = require(Dependencies.BinaryHeaps.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.BinaryHeaps))
+local Benchmarkers = require(Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
 local SharedTypes = {}
 
 

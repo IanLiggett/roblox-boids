@@ -2,7 +2,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local SharedTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").SharedTypes)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local SharedTypes = require(BoidsReplicated.SharedTypes)
 local Obstacle = require(script.Parent.Parent.Obstacle)
 local Panel = {}
 

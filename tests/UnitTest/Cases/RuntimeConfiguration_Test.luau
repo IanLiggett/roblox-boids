@@ -1,6 +1,10 @@
 --!strict
-return function(t: any): ()
-	local config = require(game.ReplicatedStorage.BoidsReplicated.RuntimeConfig)
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+	local config = require(package.RuntimeConfig)
 	local defaultActorCount = if game:GetService("RunService"):IsClient() then 16 else 2
 	t.test("generic configuration defaults and independent overrides", function()
 		local defaults = config.Resolve(nil)

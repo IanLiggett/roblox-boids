@@ -1,6 +1,9 @@
 --!strict
-return function(t: any): ()
- local package = game.ReplicatedStorage.BoidsReplicated
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
+ local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
  local codec = require(package.NetworkResults.PacketCodec)
  t.test("packet splitting copies only used canonical rows and preserves signed origins", function()
   local origin = Vector3.new(-32768,128,32767)

@@ -145,6 +145,9 @@ Actor count, end population/groups, LOD, requested sampling, and native evidence
 GetRuntimeMetrics(sinceTotals?) returns owned snapshots; mutating one cannot modify
 the collector. Report JSON is emitted after sampling, never per boid or frame.
 Unavailable Stats bandwidth values stay absent, not zero.
+Engine build detection does not call deprecated version(). Reports default studioBuild
+to "unrecorded"; supply an externally recorded studioBuild through the existing
+benchmark metadata override when collecting reproducible measurements.
 
 Validation
 The test suite lives under ServerStorage.UnitTest; UnitTestRunner is disabled.

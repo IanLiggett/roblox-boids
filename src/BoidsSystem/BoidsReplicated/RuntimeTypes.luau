@@ -7,10 +7,10 @@ type PathNode = SharedTypes.PathNode
 
 export type GroupWriter = {
 	NewGroup: (defaultBoidModel: number, explicitId: number?, renderColor: Color3?) -> Group,
-	NewBoid: (group: Group, position: Vector3, velocity: Vector3, maxSpeed: number, minSpeed: number, sight: number, avoidance: number, separation: number, repulsion: number, repulsionStrength: number, alignment: number, cohesion: number, targetBias: number, model: number?) -> number?,
+	NewBoid: (group: Group, position: Vector3, velocity: Vector3, maxSpeed: number, minSpeed: number, sight: number, avoidance: number, separation: number, repulsion: number, repulsionStrength: number, alignment: number, cohesion: number, targetBias: number, model: number?, explicitId: number?) -> number?,
 	SetPath: (group: Group, path: {PathNode}, switchToClosestNode: boolean?, loops: boolean?, debugs: boolean?, pathArrivalRadius: number?) -> (),
 	SetTarget: (group: Group, target: Target, debugs: boolean?) -> (),
-	AddGravityWell: (position: Vector3, strength: number, influenceRadius: number, groups: {Group}?) -> number,
+	AddGravityWell: (position: Vector3, strength: number, influenceRadius: number, groups: {Group}?, explicitId: number?) -> number,
 }
 export type ViewerControl = {
 	SetViewerObservers: (number, boolean, {Vector3}) -> (),
@@ -57,7 +57,9 @@ export type Replication = {
 	SetReconciliationTargets: ({{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}}) -> (),
 }
 export type Api = Replication & ClientObservation & IndexSource & {
+	SetLODPreset: ("low" | "medium" | "high") -> boolean,
 	GetRuntimeMetrics: ({[string]: number}?) -> SharedTypes.RuntimeMetrics,
 	GetRuntimeSummary: () -> SharedTypes.RuntimeSummary,
+	GetRuntimeDiagnostics: () -> SharedTypes.RuntimeDiagnostics,
 }
 return {}

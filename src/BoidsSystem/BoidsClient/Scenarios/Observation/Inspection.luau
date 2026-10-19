@@ -3,7 +3,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local SharedTypes = require(BoidsReplicated.SharedTypes)
 local ScenarioTypes = require(BoidsReplicated.Scenarios.Types)
 local ObservationTypes = require(BoidsReplicated.Scenarios.ObservationTypes)

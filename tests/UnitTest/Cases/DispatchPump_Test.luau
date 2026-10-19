@@ -1,27 +1,44 @@
 --!strict
-return function(t: any): ()
-	local DispatchPump = require(game.ReplicatedStorage.BoidsReplicated.Boids.JobBuilder.DispatchPump)
-	local function fixture(): any
-		local f: any = {clock=0, queue={}, timers={}, observations={}, runs=0, cost=0.0002, reason="noActors", delay=nil}
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+	local DispatchPump = require(package.Boids.JobBuilder.DispatchPump)
+	type Callback = () -> ()
+	type Timer = {thread: thread, callback: Callback, seconds: number, isCancelled: boolean}
+	type Observation = {trigger: DispatchPump.Trigger, reason: DispatchPump.StopReason, seconds: number}
+	type Fixture = {
+		clock: number, queue: {Callback}, timers: {Timer}, observations: {Observation},
+		runs: number, cost: number, reason: DispatchPump.StopReason, delay: number?,
+		deadline: number?, trigger: DispatchPump.Trigger?, duringRun: Callback?,
+		pump: DispatchPump.Pump, flush: Callback,
+	}
+	local function fixture(): Fixture
+		local f = {
+			clock = 0, queue = {} :: {Callback}, timers = {} :: {Timer}, observations = {} :: {Observation},
+			runs = 0, cost = 0.0002, reason = "noActors" :: DispatchPump.StopReason, delay = nil :: number?,
+			deadline = nil :: number?, trigger = nil :: DispatchPump.Trigger?, duringRun = nil :: Callback?,
+		}
 		f.pump = DispatchPump.New(0.001, {
-			Clock=function() return f.clock end,
-			Defer=function(callback) table.insert(f.queue,callback) end,
-			Delay=function(seconds, callback)
-				local thread=coroutine.create(callback)
-				table.insert(f.timers,{thread=thread,callback=callback,seconds=seconds,cancelled=false})
-				return thread
+			Clock=function(): number return f.clock end,
+			Defer=function(callback: Callback): () table.insert(f.queue,callback) end,
+			Delay=function(seconds: number, callback: Callback): thread
+				local timerThread: thread = coroutine.create(callback)
+				table.insert(f.timers,{thread=timerThread,callback=callback,seconds=seconds,isCancelled=false})
+				return timerThread
 			end,
-			Cancel=function(thread)
-				for _,timer in f.timers do if timer.thread==thread then timer.cancelled=true end end
+			Cancel=function(timerThread: thread): ()
+				for _,timer in f.timers do if timer.thread==timerThread then timer.isCancelled=true end end
 			end,
-			Run=function(deadline,trigger)
+			Run=function(deadline: number, trigger: DispatchPump.Trigger): (DispatchPump.StopReason, number?)
 				f.runs+=1; f.deadline=deadline; f.trigger=trigger
 				local duringRun: (() -> ())? = f.duringRun
 				if duringRun then duringRun() end
 				f.clock+=f.cost
 				return f.reason,f.delay
 			end,
-			Observe=function(trigger,reason,seconds) table.insert(f.observations,{trigger=trigger,reason=reason,seconds=seconds}) end,
+			Observe=function(trigger: DispatchPump.Trigger, reason: DispatchPump.StopReason, seconds: number): () table.insert(f.observations,{trigger=trigger,reason=reason,seconds=seconds}) end,
 		})
 		function f.flush(): ()
 			local queue=f.queue; f.queue={}
@@ -39,7 +56,7 @@ return function(t: any): ()
 		local f=fixture(); f.cost=0.0006
 		f.pump.BeginFrame(); f.flush()
 		f.pump.Request("completion"); f.flush()
-		t.expect.near(f.deadline,0.001)
+		t.expect.near(assert(f.deadline),0.001)
 		f.pump.Request("timer"); f.pump.Request("completion"); f.flush()
 		t.expect.equal(f.runs,2)
 		f.pump.BeginFrame(); f.flush(); t.expect.equal(f.runs,3)
@@ -50,7 +67,7 @@ return function(t: any): ()
 		t.expect.equal(#f.timers,1); t.expect.equal(f.timers[1].seconds,0.25)
 		local stale=f.timers[1]
 		f.pump.Request("completion"); f.flush()
-		t.expect.truthy(stale.cancelled); t.expect.equal(#f.timers,2)
+		t.expect.truthy(stale.isCancelled); t.expect.equal(#f.timers,2)
 		stale.callback(); f.flush(); t.expect.equal(f.runs,2)
 		f.timers[2].callback(); f.flush(); t.expect.equal(f.runs,3); t.expect.equal(f.trigger,"timer")
 	end)

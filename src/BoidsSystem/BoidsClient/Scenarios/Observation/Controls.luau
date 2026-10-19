@@ -2,8 +2,10 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local ObservationTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").Scenarios.ObservationTypes)
-local ScenarioTypes = require(ReplicatedStorage.BoidsReplicated.Scenarios.Types)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local ObservationTypes = require(BoidsReplicated.Scenarios.ObservationTypes)
+local ScenarioTypes = require(BoidsReplicated.Scenarios.Types)
 local Camera = require(script.Parent.Camera)
 local Types = require(script.Parent.Types)
 local Controls = {}

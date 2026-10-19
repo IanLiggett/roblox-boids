@@ -5,7 +5,9 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
-local ScenarioTypes = require(ReplicatedStorage:WaitForChild("BoidsReplicated").Scenarios.Types)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local ScenarioTypes = require(BoidsReplicated.Scenarios.Types)
 local Renderer = require(script.Parent.Parent.Parent.BoidsRenderer)
 local Handoff = require(script.Parent.Handoff)
 local Camera = {}

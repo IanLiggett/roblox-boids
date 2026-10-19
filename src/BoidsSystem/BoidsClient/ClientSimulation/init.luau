@@ -2,7 +2,8 @@
 -- Generic client runtime composition. Scenario delivery and experiment policy
 -- are installed by the existing process/test entry points before Start.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated")
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local RuntimeTypes = require(BoidsReplicated.RuntimeTypes)
 local RuntimeConfig = require(BoidsReplicated.RuntimeConfig)
 local SimulationReplication = require(BoidsReplicated.SimulationReplication)

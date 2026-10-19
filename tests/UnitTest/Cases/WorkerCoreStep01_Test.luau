@@ -1,23 +1,31 @@
 --!strict
-return function(t: any): ()
- local package = game.ReplicatedStorage.BoidsReplicated
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
+ local package = (game:GetService("ReplicatedStorage"):WaitForChild("BoidsReplicated") :: Instance)
+  :: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
  local Storage = require(package.BoidStorage)
  local template = game.ServerStorage.UnitTest.Fixtures.WorkerCoreStep01
+ local FixtureTypes = require(template)
+ -- A clone has the template's contract, but owns an isolated require cache.
+ local loadWorker: (ModuleScript) -> typeof(FixtureTypes) = require
+ local SharedTypes = require(package.SharedTypes)
  local cloneId = 0
  local lifetime = 1
- local function run(count: number, missingLast: boolean, migrate: boolean, detailed: boolean, buckets: boolean?, reconciliationBatches: any, emitSnapshot: boolean?, raycastProvider: any?, elapsedTicks: number?, initialPosition: Vector3?, initialObstacleDirection: Vector3?): any
+ local function run(count: number, missingLast: boolean, migrate: boolean, detailed: boolean, buckets: boolean?, reconciliationBatches: {{FixtureTypes.MessageReconciliationTarget}}?, emitSnapshot: boolean?, raycastProvider: FixtureTypes.RaycastProvider?, elapsedTicks: number?, initialPosition: Vector3?, initialObstacleDirection: Vector3?): FixtureTypes.Result
   cloneId += 1
   local clone = template:Clone()
   clone.Name = "RunningWorkerFixture_" .. cloneId
   assert(not template.Parent:FindFirstChild(clone.Name))
   clone.Parent = template.Parent
-  local ok, result = pcall(function()
-   local handlers: {[string]: any} = {}
-   local actor: any = {}
-   function actor:BindToMessageParallel(name: string, fn: any): () handlers[name]=fn end
-   function actor:BindToMessage(name: string, fn: any): () handlers[name]=fn end
-   local core = require(clone)
+  local ok, result = pcall(function(): FixtureTypes.Result
+   local registrations: {[string]: unknown} = {}
+   local actor = {}
+   function actor.BindToMessageParallel(_self: FixtureTypes.ActorDouble, name: string, fn: unknown): () registrations[name]=fn end
+   function actor.BindToMessage(_self: FixtureTypes.ActorDouble, name: string, fn: unknown): () registrations[name]=fn end
+   local core: FixtureTypes.Core = loadWorker(clone)
    core.Start(actor)
+   local handlers: FixtureTypes.Handlers = registrations :: FixtureTypes.Handlers
    if raycastProvider then
     core.SetTestRaycastProvider(raycastProvider)
    end
@@ -34,11 +42,11 @@ return function(t: any): ()
     buffer.writeu8(stats,i*16+4,16)
    end
    handlers.NewBoidsStatsBatch({boidCount=registered,data=stats,lifetimes=table.create(registered,lifetime)})
-   local pages: {any} = {}
+   local pages: {SharedTypes.Page} = {}
    local tickDelta = if elapsedTicks == nil then (if migrate then 60 else 0) else elapsedTicks
    for start=0,math.max(count-1,0),64 do
     local n=math.min(count-start,64)
-    local page={id=#pages+1,setId=999,index=#pages+1,size=n,deadCount=0,
+    local page: SharedTypes.Page={id=#pages+1,setId=999,index=#pages+1,size=n,deadCount=0,
      firstDeadWord=0,cursor=n,data=buffer.create(1024),dead=buffer.create(8)}
     for slot=0,n-1 do
      Storage.WriteBoidId(page.data,slot,start+slot+1)
@@ -50,10 +58,10 @@ return function(t: any): ()
     end
     table.insert(pages,page)
    end
-   local cell={id=1,origin=Vector3.zero,networkTick=1,networkInterval=1,emitSnapshot=if emitSnapshot == nil then true else emitSnapshot,
+   local cell: FixtureTypes.Cell={id=1,origin=Vector3.zero,networkTick=1,networkInterval=1,emitSnapshot=if emitSnapshot == nil then true else emitSnapshot,
     pages={pages=pages,pageCount=#pages,openPages={},pendingPages={}},
     pageCount=#pages,scheduledBoidCount=count,processedBoidCount=0,boidCount=count}
-   local job:any={groupId=1,usesPath=false,jobCells={cell},averageSight=16,detailedMetrics=detailed,movedBoids={}}
+   local job: FixtureTypes.Input={groupId=1,usesPath=false,jobCells={cell},averageSight=16,detailedMetrics=detailed,movedBoids={}}
    -- The replay boundary receives recorded target/path inputs before every
    -- execution; run() recreates all mutable stats/pages/job tables above.
    handlers.NewGroupTarget(1, { Position = Vector3.new(320, 40, -80) }, lifetime)
@@ -62,10 +70,10 @@ return function(t: any): ()
     { Position = Vector3.new(360, 40, -80), offset = Vector3.zero },
    }, 77, false, true, 8, lifetime)
    job.usesPath = true
-   local returned:any
-   local event:any={Fire=function(_: any,j: any): () returned=j end}
+   local returned: FixtureTypes.Result?
+   local event: FixtureTypes.Reply={Fire=function(_: FixtureTypes.Reply,j: FixtureTypes.Result?, _delay: number?, _failure: string?): () returned=j end}
    handlers.NewJob(job,event,1,100/60)
-   return returned
+   return assert(returned, "Worker fixture did not return a result")
   end)
   clone:Destroy()
   assert(ok,tostring(result))
@@ -74,14 +82,14 @@ return function(t: any): ()
  -- Zero elapsed time does not issue speculative obstacle probes.
  t.test("zero elapsed time avoids obstacle raycasts",function()
   local calls=0
-  local job=run(1,false,false,true,nil,nil,true,function(): any calls += 1;return nil end,0)
+  local job=run(1,false,false,true,nil,nil,true,function(): FixtureTypes.RaycastHit? calls += 1;return nil end,0)
   t.expect.equal(calls,0);t.expect.equal(job.measurement.obstacleForwardRays,0)
   t.expect.equal(job.measurement.obstacleEscapeRays,0);t.expect.equal(job.measurement.obstacleDetourStarts,0)
  end)
  -- A clear tangent exit commits full-distance lateral movement instead of stopping at the wall.
  t.test("clear escape probes commit a lateral detour",function()
   local calls=0
-  local job=run(1,false,false,true,nil,nil,true,function(): any
+  local job=run(1,false,false,true,nil,nil,true,function(): FixtureTypes.RaycastHit?
    calls += 1
    if calls == 1 then return {Normal=Vector3.new(-1,0,0),Distance=10} end
    return nil
@@ -95,7 +103,7 @@ return function(t: any): ()
  -- Distant geometry cannot hold a local detour after its original obstacle is no longer near.
  t.test("distant target hit releases the detour",function()
   local calls=0
-  local job=run(1,false,false,true,nil,nil,true,function(): any
+  local job=run(1,false,false,true,nil,nil,true,function(): FixtureTypes.RaycastHit?
    calls += 1
    return {Distance=100}
   end,60,nil,Vector3.new(0,0,-1))
@@ -112,7 +120,7 @@ return function(t: any): ()
  t.test("edge escape preserves committed travel direction",function()
   local calls=0
   local initialDirection=Vector3.new(0,0,-1)
-  local job=run(1,false,false,true,nil,nil,true,function(_: Vector3,_direction: Vector3): any
+  local job=run(1,false,false,true,nil,nil,true,function(_: Vector3,_direction: Vector3): FixtureTypes.RaycastHit?
    calls += 1
    if calls==1 then return {Distance=10,Normal=Vector3.xAxis} end
    if calls==2 then return {Distance=10,Normal=Vector3.xAxis} end
@@ -132,7 +140,7 @@ return function(t: any): ()
  t.test("distant heading hit holds committed direction",function()
   local calls=0
   local initialDirection=Vector3.new(0,0,-1)
-  local job=run(1,false,false,true,nil,nil,true,function(): any
+  local job=run(1,false,false,true,nil,nil,true,function(): FixtureTypes.RaycastHit?
    calls += 1
    if calls==1 then return {Distance=10,Normal=Vector3.xAxis} end
    return {Distance=30,Normal=Vector3.xAxis}
@@ -150,7 +158,7 @@ return function(t: any): ()
  t.test("edge with no forward escape retains heading",function()
   local calls=0
   local initialDirection=Vector3.new(0,0,-1)
-  local job=run(1,false,false,true,nil,nil,true,function(): any
+  local job=run(1,false,false,true,nil,nil,true,function(): FixtureTypes.RaycastHit?
    calls += 1
    if calls==1 then return {Distance=10,Normal=Vector3.zAxis} end
    if calls==2 then return {Distance=10,Normal=Vector3.zAxis} end
@@ -168,7 +176,7 @@ return function(t: any): ()
  -- A nearby blocker on the path ray keeps the committed detour active.
  t.test("local path blocker preserves detour commitment",function()
   local calls=0
-  local job=run(1,false,false,true,nil,nil,true,function(_: Vector3,direction: Vector3): any
+  local job=run(1,false,false,true,nil,nil,true,function(_: Vector3,direction: Vector3): FixtureTypes.RaycastHit?
    calls += 1
    if calls==1 then return {Distance=10,Normal=Vector3.xAxis} end
    return nil
@@ -185,7 +193,7 @@ return function(t: any): ()
  -- A committed detour carries its packed heading when it crosses into another cell.
  t.test("migrating detour preserves its packed heading",function()
   local calls=0
-  local job=run(1,false,false,true,nil,nil,true,function(): any
+  local job=run(1,false,false,true,nil,nil,true,function(): FixtureTypes.RaycastHit?
    calls += 1
    if calls == 1 then return {Normal=Vector3.new(-1,0,0),Distance=10} end
    return nil
@@ -196,7 +204,7 @@ return function(t: any): ()
  -- When all tangent exits are blocked, the response stays advisory and allows progress.
  t.test("blocked escapes retain soft pass-through",function()
   local calls=0
-  local job=run(1,false,false,true,nil,nil,true,function(): any
+  local job=run(1,false,false,true,nil,nil,true,function(): FixtureTypes.RaycastHit?
    calls += 1
    if calls == 1 then return {Normal=Vector3.new(-1,0,0),Distance=10} end
    return {Distance=1}

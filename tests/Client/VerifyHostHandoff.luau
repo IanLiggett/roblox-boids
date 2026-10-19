@@ -5,7 +5,9 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HostHooks = require(ReplicatedStorage:WaitForChild("BoidsReplicated").Scenarios.HostHooks)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local HostHooks = require(BoidsReplicated.Scenarios.HostHooks)
 
 type Result = { acquired: number, released: number, cameraRestored: boolean }
 
@@ -13,6 +15,7 @@ return function(): Result
 	assert(RunService:IsClient(), "Run handoff verification in the client runtime")
 	local player = Players.LocalPlayer
 	local boidsClient = player:WaitForChild("PlayerScripts"):WaitForChild("BoidsClient")
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsClient)
 	local handoff = require(boidsClient.Scenarios.Observation.Handoff)
 	local camera = workspace.CurrentCamera :: Camera
 	local original = camera.CFrame

@@ -4,7 +4,7 @@
 local BoidsReplicated = script.Parent.Parent.Parent
 local SharedTypes = require(BoidsReplicated.SharedTypes)
 local RuntimeMetrics = require(BoidsReplicated.RuntimeMetrics)
-local Benchmarkers = require(BoidsReplicated.Dependencies.Benchmarker.Value)
+local Benchmarkers = require(BoidsReplicated.Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
 local JobExecution = {}
 
 type Job = SharedTypes.Job

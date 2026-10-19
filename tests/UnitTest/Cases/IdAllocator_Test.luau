@@ -1,7 +1,11 @@
 --!strict
 
-return function(t: any): ()
-	local allocator = require(game.ReplicatedStorage.BoidsReplicated.Boids.IdAllocator)
+local UnitTest = require(script.Parent.Parent.RunUnitTest)
+
+return function(t: UnitTest.Context): ()
+	local package = (game.ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+		:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+	local allocator = require(package.Boids.IdAllocator)
 
 	t.test("opposite ends, reservations and idempotent release", function()
 		local pool = allocator.New()

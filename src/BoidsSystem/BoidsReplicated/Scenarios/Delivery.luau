@@ -43,7 +43,8 @@ function Delivery.StartClient(): ()
 	clientStarted = true
 	Replication.SetClientStateExtension(function(kind: string, a: unknown, b: unknown, c: unknown, d: unknown): ()
 		if kind ~= "Scenario" or type(a) ~= "string" or type(b) ~= "table" or type(d) ~= "table" then return end
-		if seen[a] or type(d.name) ~= "string" or type(d.serverGroups) ~= "table" then return end
+		local rawContext: {name: unknown, serverGroups: unknown} = d :: {name: unknown, serverGroups: unknown}
+		if seen[a] or type(rawContext.name) ~= "string" or type(rawContext.serverGroups) ~= "table" then return end
 		if c ~= nil and type(c) ~= "table" then return end
 		seen[a] = true
 		dispatch({name=a, groups=b :: {ScenarioTypes.GroupDefinition}, benchmark=c :: ScenarioTypes.Benchmark?, context=d :: ScenarioTypes.ScenarioContext})

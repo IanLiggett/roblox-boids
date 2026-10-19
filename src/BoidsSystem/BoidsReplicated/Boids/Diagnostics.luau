@@ -3,7 +3,7 @@
 local BoidsReplicated = script.Parent.Parent
 local SharedTypes = require(BoidsReplicated.SharedTypes)
 local ActorsInitializer = require(script.Parent.ActorsInitializer)
-local Benchmarkers = require(BoidsReplicated.Dependencies.Benchmarker.Value)
+local Benchmarkers = require(BoidsReplicated.Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
 
 local Diagnostics = {}
 

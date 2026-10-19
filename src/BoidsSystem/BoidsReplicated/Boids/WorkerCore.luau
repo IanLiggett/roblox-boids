@@ -17,7 +17,8 @@ Runtime Message API:
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SharedTableRegistry = game:GetService("SharedTableRegistry")
 -- WorkerCore runs from an Actor clone, not its source package hierarchy.
-local BoidsReplicated = ReplicatedStorage:WaitForChild("BoidsReplicated") :: typeof(script.Parent.Parent)
+local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
+	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local StatsCodec = require(BoidsReplicated.Boids.StatsCodec)
 
 local SharedTypes = require(BoidsReplicated.SharedTypes)

@@ -12,11 +12,10 @@ local visuals: {[number]: GroupVisuals} = {}
 local GridVisualizersFolder: Folder? = nil
 
 local function getVisuals(lifetime: number): GroupVisuals
-	local state = visuals[lifetime]
-	if not state then
-		state = {cells = {}}
-		visuals[lifetime] = state
-	end
+	local existing: GroupVisuals? = visuals[lifetime]
+	if existing then return existing end
+	local state: GroupVisuals = {cells = {}}
+	visuals[lifetime] = state
 	return state
 end
 
@@ -68,9 +67,10 @@ local function createCellOutline(origin: Vector3): Model
 	end
 
 	if not GridVisualizersFolder then
-		GridVisualizersFolder = Instance.new("Folder")
-		GridVisualizersFolder.Name = "GridVisualizers"
-		GridVisualizersFolder.Parent = workspace
+		local folder: Folder = Instance.new("Folder")
+		folder.Name = "GridVisualizers"
+		folder.Parent = workspace
+		GridVisualizersFolder = folder
 	end
 	model.Parent = GridVisualizersFolder
 	return model
