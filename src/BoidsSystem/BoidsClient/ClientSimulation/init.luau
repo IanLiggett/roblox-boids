@@ -15,11 +15,11 @@ local ClientSimulation = {}
 
 local started = false
 
-function ClientSimulation.Start(options: RuntimeConfig.Options?): RuntimeTypes.Api
+function ClientSimulation.Start(options: RuntimeConfig.Options?, renderOptions: Renderer.Options?): RuntimeTypes.Api
 	if started then return Boids end
 	started = true
 	CameraReporter.Start()
-	Renderer.Start(CameraReporter.Update)
+	Renderer.Start(CameraReporter.Update, renderOptions)
 	ClientRendererBridge.SetRenderer(Renderer)
 	Boids.Start(options)
 	if ClientSimulation.GetSimulationMode() ~= "client" then

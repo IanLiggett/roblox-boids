@@ -77,7 +77,7 @@ function ClientScenarioTestInitializer.Start(hooks: HostHooks.Client?): ()
 	RendererBenchmark.Start(Renderer)
 	Delivery.StartClient()
 	Delivery.SetClientHandler(startScenarioTest)
-	ClientSimulation.Start(BenchmarkHarness.GetStartupConfiguration())
+	ClientSimulation.Start(BenchmarkHarness.GetStartupConfiguration(), BenchmarkHarness.GetStartupRendererConfiguration())
 end
 
 return ClientScenarioTestInitializer

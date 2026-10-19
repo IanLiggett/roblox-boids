@@ -1,5 +1,21 @@
 # Boids Lessons
 
+[QUERIES] Swap removal must repair the canonical entry slot
+
+Tags: BoidQueryIndex, bucket, swap removal, spatial queries, migration, dense slots
+
+Rejected
+
+Updating only the bucket's ID list/reverse lookup after swapping its last ID into a removed slot.
+
+Reason
+
+Subsequent removal uses the canonical entry's slot. Leaving that slot unchanged corrupts later migrations: an entry can retain the correct position while disappearing from small local queries. Repeated migration reproduces this on package main.
+
+Current guardrail
+
+Repair the moved entry's slot in the same non-yielding removal operation. Test repeated cross-cell moves and neighboring removals, checking spatial discoverability rather than only entry counts or copied positions.
+
 [BOIDS] Simulation ownership
 
 Tags: boids, ownership, combat health, fields, scenarios, test orchestration, package boundary

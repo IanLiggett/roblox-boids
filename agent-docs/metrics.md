@@ -5,6 +5,8 @@ benchmark evidence is not part of this repository; do not infer measured speedup
 from these definitions or from type-only changes.
 
 Scope and ownership
+
+- Renderer Measurements separates per-frame sampling from completed render epochs. rendererMsTotal sums epoch elapsed time, including transport/scheduler/synchronization delays; worker phase totals sum parallel work and must not be added to elapsed time or called OS utilization. coordinatorMs includes preparation/dispatch and acknowledgement-owned query maintenance; inputBytes counts changed-sample buffer payload only, excluding topology/engine framing. Existing simulation metrics below keep their meanings.
 - RuntimeMetrics is a generic process-local collector. It has no frame callbacks.
 - SharedTypes.RuntimeMetrics / WorkerMeasurement are canonical schemas.
 - The coordinator combines its own counters with measurements returned by Actors.
@@ -172,3 +174,7 @@ are insufficient.
 
 Do not turn instrumentation maintenance into unrelated optimization work. Preserve
 the explicit execution/retirement ownership described in runtime.md.
+
+Before starting live tests, inspect connected Studio sessions and stop prior simulations started for the task. Run only one test simulation at a time and discard overlapping captures; unrelated sessions require owner coordination rather than silently stopping them.
+
+Renderer acceptance captures use PreRender frame intervals and record Heartbeat counts diagnostically. Heartbeat can outnumber rendered frames under load; a count mismatch alone must not reject genuine frame loss. Check accumulated render time, first/last callback times and maximum wall-clock render gap for continuity, and compare renderer callbacks with PreRender callbacks. A hidden/non-targetable Studio can continue Heartbeat while rendering stops; such a capture is not performance evidence. Use visible, equally sized test windows, dismiss startup modals, and reject missing render coverage instead of treating fewer updates as a speedup.

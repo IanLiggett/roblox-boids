@@ -379,7 +379,7 @@ end
 function Observation.TrySelectBoid(boidId: number): (boolean, string?)
 	if not sessionState.isActive or isClosing then return false, "Observation inactive" end
 	if boidId ~= boidId or boidId % 1 ~= 0 or boidId < 0 or boidId > 65535 then return false, "Use an integer ID: 0-65535" end
-	local rendered = Renderer.GetRenderedBoidState(boidId)
+	local rendered = Renderer.GetRenderedBoidPose(boidId)
 	if pickFilter ~= nil and (not rendered or rendered.groupId ~= pickFilter) then return false, "ID is outside the selected group filter" end
 	Observation.SelectBoid(boidId)
 	if rendered then Observation.SelectGroup(rendered.groupId) end

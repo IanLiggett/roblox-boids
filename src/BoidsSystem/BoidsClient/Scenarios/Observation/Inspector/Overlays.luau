@@ -183,7 +183,7 @@ function Overlays.Start(): ()
 	anchor = createdAnchor
 end
 
-function Overlays.Update(rendered: Renderer.RenderedBoidState?, groupColor: Color3?, groupState: SharedTypes.GroupObservation?, showSelection: boolean, showGroup: boolean, obstacle: SharedTypes.ObstacleObservation?, obstacleLayers: ObstacleLayers?): string
+function Overlays.Update(rendered: Renderer.RenderedBoidSample?, groupColor: Color3?, groupState: SharedTypes.GroupObservation?, showSelection: boolean, showGroup: boolean, obstacle: SharedTypes.ObstacleObservation?, obstacleLayers: ObstacleLayers?): string
 	if not folder then return "Overlays inactive" end
 	table.clear(used)
 	total, missing, truncated, labelUsed = 0, 0, false, 0
