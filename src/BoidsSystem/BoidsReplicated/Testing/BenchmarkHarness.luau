@@ -70,6 +70,19 @@ function BenchmarkHarness.GetStartupConfiguration(): RuntimeConfig.Resolved
 	return BenchmarkHarness.GetRuntimeConfiguration(if type(name) == "string" then name else "")
 end
 
+local renderConfiguration: {actorCount: number}? = nil
+function BenchmarkHarness.GetStartupRendererConfiguration(): {actorCount: number}
+	if renderConfiguration then return renderConfiguration end
+	local value = BenchmarkConfig:GetAttribute("BoidBenchmarkRenderActorCount")
+	local scenario = BenchmarkConfig:GetAttribute("ActiveBoidsScenario")
+	local isBenchmark = type(scenario) == "string" and string.find(scenario, "^Benchmark") ~= nil
+	local enabled = isBenchmark or BenchmarkConfig:GetAttribute("RendererBenchmarkEnabled") == true
+	local count = if enabled and type(value) == "number" and value % 1 == 0 and value >= 1 and value <= 32 then value else 8
+	local resolved = {actorCount = count}
+	renderConfiguration = resolved
+	return resolved
+end
+
 function BenchmarkHarness.GetRunOptions(scenarioName: string): RunOptions?
 	if not string.find(scenarioName, "^Benchmark") then
 		return nil
@@ -103,6 +116,7 @@ function BenchmarkHarness.GetRunOptions(scenarioName: string): RunOptions?
 			benchmarkQueryIndexMode = "both",
 			benchmarkSourceRevision = sourceRevision,
 			benchmarkActorCount = runtimeConfig.actorCount,
+			benchmarkRenderActorCount = BenchmarkHarness.GetStartupRendererConfiguration().actorCount,
 			benchmarkTargetActorJobMs = runtimeConfig.targetActorJobMs,
 		},
 		cameraCFrame = CFrame.lookAt(Vector3.new(0, 200, 700), Vector3.zero),

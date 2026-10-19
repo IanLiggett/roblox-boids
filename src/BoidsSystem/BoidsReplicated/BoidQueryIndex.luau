@@ -85,6 +85,7 @@ local function removeFromBucket(self: PrivateIndex, boidId: number, entry: Entry
 	local movedBoidId = bucket.boidIds[lastSlot]
 	bucket.boidIds[slot] = movedBoidId
 	bucket.slotByBoidId[movedBoidId] = slot
+	self.entries[movedBoidId].slot = slot
 	bucket.boidIds[lastSlot] = nil
 	bucket.slotByBoidId[boidId] = nil
 	if lastSlot == 1 then

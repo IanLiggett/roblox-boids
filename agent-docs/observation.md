@@ -2,6 +2,8 @@
 
 Observer camera modes
 
+- Renderer.GetRenderedBoidPose supplies live submitted CFrames for camera follow and picking. Motion details are cancellable 4 Hz RequestRenderedBoidSample reads; selected-group update ages are asynchronous reductions alongside 2 Hz bounds reads. Retain request/session/selection guards, explicit pending ages, and the distinction between read time and actual update time. See rendering.md for ownership and returned records.
+
 Current interface
 
 - Observation.Camera implements Free, Boid, Group, and Overview. Free flight uses WASD, Q/E world elevation, RMB look, Shift acceleration, and adjustable speed. Boid/group/overview orbit use world-Y up, clamped pitch, and wheel/button zoom.

@@ -46,6 +46,12 @@ local groupBounds: Renderer.RenderedGroupBounds? = nil
 local overviewBounds: Bounds? = nil
 local smoothedCenter: Vector3? = nil
 local smoothedRadius = 1
+local nextBoidSample = 0
+local boidSample: Renderer.RenderedBoidSample? = nil
+local groupAge: Renderer.RenderedGroupAge? = nil
+local cancelBoidSample: (() -> ())? = nil
+local cancelGroupAge: (() -> ())? = nil
+local sampleGeneration = 0
 local nextBoundsRefresh = 0
 local nextUiRefresh = 0
 local BOUNDS_INTERVAL = 0.5
@@ -171,6 +177,12 @@ local function refreshBounds(now: number): ()
 			return
 		end
 		groupBounds = Renderer.GetRenderedGroupBounds(selectedGroupId)
+		if cancelGroupAge then cancelGroupAge() end
+		local id = selectedGroupId
+		local ownedGeneration = sampleGeneration
+		cancelGroupAge = Renderer.RequestRenderedGroupAge(id, function(age: Renderer.RenderedGroupAge?): ()
+			if isActive and ownedGeneration == sampleGeneration and selectedGroupId == id then groupAge = age end
+		end)
 		if groupBounds then
 			hasSeenGroup = true
 		end
@@ -189,10 +201,23 @@ local function step(deltaTime: number, view: CFrame): (CFrame, Vector3?)
 	local boidId = owner.GetSelectedBoid()
 	if trackedBoidId ~= boidId then
 		trackedBoidId = boidId
+		boidSample = nil
+		nextBoidSample = 0
+		if cancelBoidSample then cancelBoidSample()
+		cancelBoidSample = nil end
 		hasSeenBoid = false
 	end
 	-- This is a single O(1) read, never a population traversal.
-	local boid: Renderer.RenderedBoidState? = if boidId then Renderer.GetRenderedBoidState(boidId) else nil
+	local boid: Renderer.RenderedBoidPose? = if boidId then Renderer.GetRenderedBoidPose(boidId) else nil
+	if boidId and now >= nextBoidSample then
+		nextBoidSample = now + 0.25
+		if cancelBoidSample then cancelBoidSample() end
+		local id = boidId
+		local ownedGeneration = sampleGeneration
+		cancelBoidSample = Renderer.RequestRenderedBoidSample(id, function(sample: Renderer.RenderedBoidSample?): ()
+			if isActive and ownedGeneration == sampleGeneration and trackedBoidId == id then boidSample = sample end
+		end)
+	end
 	if boid then
 		hasSeenBoid = true
 	elseif boidId and hasSeenBoid then
@@ -245,8 +270,10 @@ local function step(deltaTime: number, view: CFrame): (CFrame, Vector3?)
 		if boid and boid.isRendered then
 			focusPosition = boid.cframe.Position
 			nextView = CFrame.new(focusPosition) * rotation() * CFrame.new(0, 0, 24 * zoomScale)
-			local age = now - (boid.renderedAt :: number)
-			status = if age > 1 then string.format("Rendered boid #%d | pose stale: %.1fs", boid.boidId, age)
+			local renderedAt = if boidSample then boidSample.renderedAt else nil
+			local age = if renderedAt then now - renderedAt else 0
+			status = if not renderedAt then string.format("Rendered boid #%d | age sample pending", boid.boidId)
+				elseif age > 1 then string.format("Rendered boid #%d | pose stale: %.1fs", boid.boidId, age)
 				else string.format("Rendered boid #%d | group #%d", boid.boidId, boid.groupId)
 		else
 			status = "Selected boid unavailable | waiting for rendered pose"
@@ -256,11 +283,12 @@ local function step(deltaTime: number, view: CFrame): (CFrame, Vector3?)
 		if mode == "Group" and groupBounds then
 			local group: Renderer.RenderedGroupBounds = groupBounds
 			local radius = math.max((group.minimum - group.centroid).Magnitude, (group.maximum - group.centroid).Magnitude)
-			local age = now - group.oldestRenderedAt
+			local oldest = if groupAge then groupAge.oldestRenderedAt else nil
+			local age = if oldest then now - oldest else 0
 			bounds = {
 				center = group.centroid, radius = radius,
 				message = string.format("Rendered group #%d | %d boids%s", group.groupId, group.count,
-					if age > 1 then string.format(" | oldest pose: %.1fs (stale)", age) else ""),
+					if not oldest then " | age sample pending" elseif age > 1 then string.format(" | sampled oldest pose: %.1fs (stale)", age) else ""),
 			}
 		elseif mode == "Overview" then
 			bounds = overviewBounds
@@ -325,6 +353,9 @@ end
 
 function Camera.SelectGroup(groupId: number?): ()
 	selectedGroupId = groupId
+	groupAge = nil
+	if cancelGroupAge then cancelGroupAge()
+	cancelGroupAge = nil end
 	groupBounds = nil
 	hasSeenGroup = false
 	nextBoundsRefresh = 0
@@ -363,6 +394,9 @@ function Camera.Start(owner: CameraApi): ()
 	end
 	api = owner
 	isActive = true
+	sampleGeneration += 1
+	nextBoidSample = 0
+	boidSample, groupAge = nil, nil
 	hasWindowFocus = true
 	mode = "Free"
 	status = "Free flight"
@@ -425,6 +459,12 @@ function Camera.Stop(): ()
 		return
 	end
 	isActive = false
+	sampleGeneration += 1
+	if cancelBoidSample then cancelBoidSample()
+	cancelBoidSample = nil end
+	if cancelGroupAge then cancelGroupAge()
+	cancelGroupAge = nil end
+	boidSample, groupAge = nil, nil
 	Handoff.SetCameraDriver(nil)
 	for _, connection in connections do connection:Disconnect() end
 	table.clear(connections)

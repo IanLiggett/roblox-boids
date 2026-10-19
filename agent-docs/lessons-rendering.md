@@ -1,5 +1,21 @@
 # Rendering Lessons
 
+[RENDERING] Actor acknowledgement is not the render timestamp
+
+Tags: rendering, Actor, cadence, LOD, epoch, acknowledgement, nextDue
+
+Rejected
+
+Adding the cell interval to acknowledgement receipt time.
+
+Reason
+
+Transport/synchronization delay then becomes an extra interval component. A near cell intended for 30 Hz can fall to every third display frame even when each job completes safely.
+
+Current guardrail
+
+Publish the next deadline only after successful settlement, but anchor it to the epoch's common render timestamp plus the interval. Never overlap epochs or treat a dispatch as completion.
+
 [RENDERING] Hit highlights
 
 Tags: rendering, hit, Highlight, flash, color, dense combat

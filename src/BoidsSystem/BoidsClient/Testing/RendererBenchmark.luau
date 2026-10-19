@@ -3,13 +3,9 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: Instance)
 	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
+local Measurements = require(script.Parent.Parent.BoidsRenderer.Measurements)
 local RendererBenchmark = {}
-type Snapshot = {
- samples: number, rendererMsTotal: number, rendererMsMax: number,
- frameMsTotal: number, frameMsMax: number, activeCells: number,
- scheduledCells: number, scheduledBoids: number, dirtyTransforms: number,
- renderCap: number, agedCells: number,
-}
+type Snapshot = Measurements.Snapshot
 type Reader = {
  SetMeasurementsEnabled: (boolean) -> (), ResetMeasurements: () -> (),
  GetMeasurements: () -> Snapshot,
@@ -47,19 +43,28 @@ function RendererBenchmark.Start(renderer: Reader): ()
   local s = renderer.GetMeasurements()
   if s.samples - lastExport < 60 then return end
   lastExport = s.samples
-  workspace:SetAttribute("RendererBenchmarkImplementation", "Motor6D")
+  workspace:SetAttribute("RendererBenchmarkImplementation", "Motor6DParallel")
   workspace:SetAttribute("RendererBenchmarkSamples", s.samples)
   workspace:SetAttribute("RendererBenchmarkRendererMsAverage", s.rendererMsTotal / s.samples)
   workspace:SetAttribute("RendererBenchmarkRendererMsMax", s.rendererMsMax)
   workspace:SetAttribute("RendererBenchmarkFrameMsAverage", s.frameMsTotal / s.samples)
   workspace:SetAttribute("RendererBenchmarkFrameMsMax", s.frameMsMax)
-  workspace:SetAttribute("RendererBenchmarkCpuFrameBudgetPercent", if s.frameMsTotal > 0 then s.rendererMsTotal / s.frameMsTotal * 100 else 0)
+  workspace:SetAttribute("RendererBenchmarkWallFramePercent", if s.frameMsTotal > 0 then s.rendererMsTotal / s.frameMsTotal * 100 else 0)
   workspace:SetAttribute("RendererBenchmarkActiveCells", s.activeCells)
   workspace:SetAttribute("RendererBenchmarkScheduledCells", s.scheduledCells)
   workspace:SetAttribute("RendererBenchmarkScheduledBoids", s.scheduledBoids)
   workspace:SetAttribute("RendererBenchmarkDirtyTransforms", s.dirtyTransforms)
   workspace:SetAttribute("RendererBenchmarkRenderCap", s.renderCap)
   workspace:SetAttribute("RendererBenchmarkAgedCells", s.agedCells)
+  workspace:SetAttribute("RendererBenchmarkEpochs", s.epochs)
+  workspace:SetAttribute("RendererBenchmarkCoordinatorMs", s.coordinatorMs)
+  workspace:SetAttribute("RendererBenchmarkKernelMs", s.kernelMs)
+  workspace:SetAttribute("RendererBenchmarkInputMs", s.inputMs)
+  workspace:SetAttribute("RendererBenchmarkSynchronizeMs", s.synchronizeMs)
+  workspace:SetAttribute("RendererBenchmarkAssignmentMs", s.assignmentMs)
+  workspace:SetAttribute("RendererBenchmarkInputBytes", s.inputBytes)
+  workspace:SetAttribute("RendererBenchmarkMessages", s.messages)
+  workspace:SetAttribute("RendererBenchmarkProcessedBoids", s.processedBoids)
  end)
 end
 return RendererBenchmark

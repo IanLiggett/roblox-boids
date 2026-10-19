@@ -20,7 +20,7 @@ export type GroupRow = {
 }
 type Sample = {
 	selectedBoidId: number?, refreshedAt: number,
-	rendered: Renderer.RenderedBoidState?, client: ClientSample?, server: ObservationTypes.ServerSample?,
+	rendered: Renderer.RenderedBoidSample?, client: ClientSample?, server: ObservationTypes.ServerSample?,
 	selectedGroupId: number?, groupColor: Color3?, group: SharedTypes.GroupObservation?,
 }
 export type Snapshot = Sample & { obstacle: Obstacle.State }
@@ -50,7 +50,15 @@ local seenGroups: {[number]: boolean} = {}
 local groups: {GroupRow} = {}
 local snapshot: Sample = { refreshedAt = 0 }
 
+local renderedSample: Renderer.RenderedBoidSample? = nil
+local cancelRenderedSample: (() -> ())? = nil
+local renderRequestRevision = 0
+
 local function clearSnapshot(): ()
+	renderRequestRevision += 1
+	if cancelRenderedSample then cancelRenderedSample()
+	cancelRenderedSample = nil end
+	renderedSample = nil
 	tracker, currentId = nil, nil
 	snapshot = { refreshedAt = 0 }
 end
@@ -76,6 +84,7 @@ end
 local function refresh(owner: Source, now: number): ()
 	local id = owner.GetSelectedBoid()
 	if id ~= currentId then
+		renderedSample = nil
 		tracker = nil
 		currentId = id
 	end
@@ -91,12 +100,25 @@ local function refresh(owner: Source, now: number): ()
 	end
 	snapshot = {
 		selectedBoidId = id, refreshedAt = now,
-		rendered = if id then Renderer.GetRenderedBoidState(id) else nil,
+		rendered = renderedSample,
 		client = if client and tracker then { state = client, simulationAge = tracker.seconds, isAgeLowerBound = tracker.isLowerBound } else nil,
 		server = owner.GetServerSample(),
 		selectedGroupId = selectedGroup, groupColor = color,
 		group = if groupOverlayEnabled and selectedGroup then owner.GetGroupObservation(selectedGroup) else nil,
 	}
+	if cancelRenderedSample then cancelRenderedSample()
+	cancelRenderedSample = nil end
+	renderRequestRevision += 1
+	local requestRevision = renderRequestRevision
+	local ownedGeneration = generation
+	if id then
+		cancelRenderedSample = Renderer.RequestRenderedBoidSample(id, function(sample: Renderer.RenderedBoidSample?): ()
+			if generation ~= ownedGeneration or requestRevision ~= renderRequestRevision or not isActive or source ~= owner or owner.GetSelectedBoid() ~= id then return end
+			renderedSample = sample
+			snapshot.rendered = sample
+			owner.InspectionChanged()
+		end)
+	end
 	owner.InspectionChanged()
 end
 
