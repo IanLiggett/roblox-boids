@@ -1,4 +1,3 @@
---!native
 --!strict
 
 --[[ BoidsRenderer
@@ -109,13 +108,24 @@ local function getClientQueryIndex(): BoidQueryIndex.Index?
 	return clientQueryIndex
 end
 
-local motorCount = 0
+type RenderState = {
+	latestAt: number,
+	latestPosition: Vector3,
+	latestVelocity: Vector3,
+	renderPosition: Vector3,
+	renderVelocity: Vector3,
+	nextRenderTime: number,
+	lastNetworkInterval: number,
+	facing: Vector3,
+	hasLatest: boolean,
+	hasRender: boolean,
+}
+
+local renderStates: {RenderState} = {}
 
 type RenderCell = {
 	key: number,
-	originX: number,
-	originY: number,
-	originZ: number,
+	origin: Vector3,
 	renderIndices: {number},
 	slotByRenderIndex: {[number]: number},
 	nextDueTime: number,
@@ -238,16 +248,18 @@ local function updateRenderCellIndex(boidId: number, previousIndex: number, next
 	cell.slotByRenderIndex[nextIndex] = slot
 end
 
-local function assignBoidToRenderCell(boidId: number, cellOriginX: number, cellOriginY: number, cellOriginZ: number): ()
+local function assignBoidToRenderCell(boidId: number, position: Vector3): ()
 	local renderIndex: number? = renderIndexByBoid[boidId]
 	if not renderIndex then
 		return
 	end
 
-	local originX: number = (cellOriginX // RENDER_CELL_SIZE) * RENDER_CELL_SIZE
-	local originY: number = (cellOriginY // RENDER_CELL_SIZE) * RENDER_CELL_SIZE
-	local originZ: number = (cellOriginZ // RENDER_CELL_SIZE) * RENDER_CELL_SIZE
-	local cellKey: number = Quantization.GetNumericalKey(originX, originY, originZ)
+	local origin: Vector3 = Vector3.new(
+		(position.X // RENDER_CELL_SIZE) * RENDER_CELL_SIZE,
+		(position.Y // RENDER_CELL_SIZE) * RENDER_CELL_SIZE,
+		(position.Z // RENDER_CELL_SIZE) * RENDER_CELL_SIZE
+	)
+	local cellKey: number = Quantization.GetNumericalKey(origin.X, origin.Y, origin.Z)
 	if renderCellKeyByBoid[boidId] == cellKey then
 		return
 	end
@@ -257,9 +269,7 @@ local function assignBoidToRenderCell(boidId: number, cellOriginX: number, cellO
 	local existing: RenderCell? = renderCellsByKey[cellKey]
 	local cell: RenderCell = if existing then existing else {
 			key = cellKey,
-			originX = originX,
-			originY = originY,
-			originZ = originZ,
+			origin = origin,
 			renderIndices = {},
 			slotByRenderIndex = {},
 			nextDueTime = workspace:GetServerTimeNow(),
@@ -279,80 +289,7 @@ local function assignBoidToRenderCell(boidId: number, cellOriginX: number, cellO
 end
 
 
-local F32_SIZE: number = 4
-local F64_SIZE: number = 8
-local U8_SIZE: number = 1
 local U16_SIZE: number = 2
-local U32_SIZE: number = 4
-
-local STATE_LATEST_TIME_OFFSET: number = 0
-local STATE_LATEST_PX_OFFSET: number = STATE_LATEST_TIME_OFFSET + F64_SIZE
-local STATE_LATEST_PY_OFFSET: number = STATE_LATEST_PX_OFFSET + F32_SIZE
-local STATE_LATEST_PZ_OFFSET: number = STATE_LATEST_PY_OFFSET + F32_SIZE
-local STATE_LATEST_VX_OFFSET: number = STATE_LATEST_PZ_OFFSET + F32_SIZE
-local STATE_LATEST_VY_OFFSET: number = STATE_LATEST_VX_OFFSET + F32_SIZE
-local STATE_LATEST_VZ_OFFSET: number = STATE_LATEST_VY_OFFSET + F32_SIZE
-
-local STATE_RENDER_PX_OFFSET: number = STATE_LATEST_VZ_OFFSET + F32_SIZE
-local STATE_RENDER_PY_OFFSET: number = STATE_RENDER_PX_OFFSET + F32_SIZE
-local STATE_RENDER_PZ_OFFSET: number = STATE_RENDER_PY_OFFSET + F32_SIZE
-local STATE_RENDER_VX_OFFSET: number = STATE_RENDER_PZ_OFFSET + F32_SIZE
-local STATE_RENDER_VY_OFFSET: number = STATE_RENDER_VX_OFFSET + F32_SIZE
-local STATE_RENDER_VZ_OFFSET: number = STATE_RENDER_VY_OFFSET + F32_SIZE
-
-local STATE_NEXT_RENDER_TIME_OFFSET: number = STATE_RENDER_VZ_OFFSET + F32_SIZE
-local STATE_RENDER_INTERVAL_OFFSET: number = STATE_NEXT_RENDER_TIME_OFFSET + F64_SIZE
-local STATE_LAST_NETWORK_INTERVAL_OFFSET: number = STATE_RENDER_INTERVAL_OFFSET + F32_SIZE
-local STATE_FLAGS_OFFSET: number = STATE_LAST_NETWORK_INTERVAL_OFFSET + F32_SIZE
--- Keep the facing vector f32-aligned after the flags byte and its padding.
-local STATE_FACING_X_OFFSET: number = STATE_FLAGS_OFFSET + F32_SIZE
-local STATE_FACING_Y_OFFSET: number = STATE_FACING_X_OFFSET + F32_SIZE
-local STATE_FACING_Z_OFFSET: number = STATE_FACING_Y_OFFSET + F32_SIZE
-local RENDER_STATE_ROW_BYTES: number = 96
-
-local STATE_HAS_LATEST: number = 1
-local STATE_HAS_RENDER: number = 2
-local STATE_OUT_OF_VIEW: number = 4
-local STATE_HAS_LAST_NETWORK_INTERVAL: number = 8
-
-local renderStateBuffer: buffer = buffer.create(RENDER_STATE_ROW_BYTES * 128)
-
-local function stateOffset(index: number): number
-	return (index - 1) * RENDER_STATE_ROW_BYTES
-end
-
-local function ensureRenderStateCapacity(index: number): ()
-	local requiredBytes: number = index * RENDER_STATE_ROW_BYTES
-	local currentBytes: number = buffer.len(renderStateBuffer)
-	if currentBytes >= requiredBytes then
-		return
-	end
-
-	local newBytes: number = math.max(currentBytes, RENDER_STATE_ROW_BYTES * 128)
-	while newBytes < requiredBytes do
-		newBytes *= 2
-	end
-
-	local newBuffer: buffer = buffer.create(newBytes)
-	if currentBytes > 0 then
-		buffer.copy(newBuffer, 0, renderStateBuffer, 0, currentBytes)
-	end
-	renderStateBuffer = newBuffer
-end
-
-local function copyRenderStateRow(fromIndex: number, toIndex: number): ()
-	if fromIndex == toIndex then
-		return
-	end
-
-	buffer.copy(
-		renderStateBuffer,
-		stateOffset(toIndex),
-		renderStateBuffer,
-		stateOffset(fromIndex),
-		RENDER_STATE_ROW_BYTES
-	)
-end
 
 -- Smooth authoritative corrections over much of a boid's expected update interval.
 -- Extrapolation remains capped below, so a stale snapshot cannot make the render
@@ -378,58 +315,19 @@ local function exponentialDecayAlpha(dt: number, halfLife: number): number
 	return 0.5 ^ (dt / halfLife)
 end
 
-local function safeDirection(v: Vector3):Vector3
-	if v.Magnitude > 0.1 then
-		return v
-	end
-	return Vector3.zAxis
-end
-
-local function safeLookDirection(v: Vector3): Vector3
-	if v.Magnitude > 0.001 then
-		return v
-	end
-	return Vector3.zAxis
-end
-
-local function boidJitter(id: number, interval: number): number
-	return ((id * 1103515245) % 10000) / 10000 * interval
-end
-
-local function initRenderState(index: number, boidId: number, now: number): ()
-	ensureRenderStateCapacity(index)
-
-	local offset: number = stateOffset(index)
-	buffer.writef64(renderStateBuffer, offset + STATE_LATEST_TIME_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_PX_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_PY_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_PZ_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_VX_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_VY_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_VZ_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_PX_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_PY_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_PZ_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_VX_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_VY_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_VZ_OFFSET, 0)
-	buffer.writef64(renderStateBuffer, offset + STATE_NEXT_RENDER_TIME_OFFSET, now)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_INTERVAL_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_LAST_NETWORK_INTERVAL_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_FACING_X_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_FACING_Y_OFFSET, 0)
-	buffer.writef32(renderStateBuffer, offset + STATE_FACING_Z_OFFSET, 0)
-	buffer.writeu8(renderStateBuffer, offset + STATE_FLAGS_OFFSET, 0)
-end
-
-local function writeNewState(offset: number, renderPx: number, renderPy: number, renderPz: number, renderVx: number, renderVy: number, renderVz: number, flags: number): ()
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_PX_OFFSET, renderPx)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_PY_OFFSET, renderPy)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_PZ_OFFSET, renderPz)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_VX_OFFSET, renderVx)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_VY_OFFSET, renderVy)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_VZ_OFFSET, renderVz)
-	buffer.writeu8(renderStateBuffer, offset + STATE_FLAGS_OFFSET, flags)
+local function initRenderState(index: number, now: number): ()
+	renderStates[index] = {
+		latestAt = 0,
+		latestPosition = Vector3.zero,
+		latestVelocity = Vector3.zero,
+		renderPosition = Vector3.zero,
+		renderVelocity = Vector3.zero,
+		nextRenderTime = now,
+		lastNetworkInterval = 0,
+		facing = Vector3.zero,
+		hasLatest = false,
+		hasRender = false,
+	}
 end
 
 type CompiledRenderBand = {
@@ -474,27 +372,16 @@ local function refreshCompiledRenderSchedule(clientConfig: LODConfig.ClientConfi
 end
 
 local function getCellCenterDistance(cell: RenderCell): number
-	local centerX: number = cell.originX + CELL_HALF_SIZE
-	local centerY: number = cell.originY + CELL_HALF_SIZE
-	local centerZ: number = cell.originZ + CELL_HALF_SIZE
-	local cameraPosition: Vector3 = Camera.CFrame.Position
-	local cameraToCellX: number = centerX - cameraPosition.X
-	local cameraToCellY: number = centerY - cameraPosition.Y
-	local cameraToCellZ: number = centerZ - cameraPosition.Z
-	return math.sqrt(cameraToCellX * cameraToCellX + cameraToCellY * cameraToCellY + cameraToCellZ * cameraToCellZ)
+	local cellCenter: Vector3 = cell.origin + Vector3.one * CELL_HALF_SIZE
+	return (cellCenter - Camera.CFrame.Position).Magnitude
 end
 
 local function getCellRenderInterval(cell: RenderCell): number
-	local centerX: number = cell.originX + CELL_HALF_SIZE
-	local centerY: number = cell.originY + CELL_HALF_SIZE
-	local centerZ: number = cell.originZ + CELL_HALF_SIZE
-	local cameraPosition: Vector3 = Camera.CFrame.Position
-	local cameraToCellX: number = centerX - cameraPosition.X
-	local cameraToCellY: number = centerY - cameraPosition.Y
-	local cameraToCellZ: number = centerZ - cameraPosition.Z
-	local centerDistance: number = math.sqrt(cameraToCellX * cameraToCellX + cameraToCellY * cameraToCellY + cameraToCellZ * cameraToCellZ)
+	local cellCenter: Vector3 = cell.origin + Vector3.one * CELL_HALF_SIZE
+	local cameraToCell: Vector3 = cellCenter - Camera.CFrame.Position
+	local centerDistance: number = cameraToCell.Magnitude
 	local lookDirection: Vector3 = Camera.CFrame.LookVector
-	local forwardDot: number = cameraToCellX * lookDirection.X + cameraToCellY * lookDirection.Y + cameraToCellZ * lookDirection.Z
+	local forwardDot: number = cameraToCell:Dot(lookDirection)
 	local coneCosine: number = math.cos(math.rad(Camera.FieldOfView * 0.5))
 
 	local visible: boolean = centerDistance <= CELL_BOUND_RADIUS
@@ -528,109 +415,54 @@ local function getCellRenderInterval(cell: RenderCell): number
 	return compiledRenderBands[selected].interval
 end
 local function renderBoid(index: number, now: number, queryIndex: BoidQueryIndex.Index?): boolean
-	local offset: number = stateOffset(index)
-	local flags: number = buffer.readu8(renderStateBuffer, offset + STATE_FLAGS_OFFSET)
-	if bit32.band(flags, STATE_HAS_LATEST) == 0 then
+	local state: RenderState = renderStates[index]
+	if not state.hasLatest then
 		return false
 	end
 
-	local lastRenderTime: number = buffer.readf64(renderStateBuffer, offset + STATE_NEXT_RENDER_TIME_OFFSET)
-	local dt: number = math.min(math.max(0, now - lastRenderTime), MAX_EXTRAPOLATION)
-	buffer.writef64(renderStateBuffer, offset + STATE_NEXT_RENDER_TIME_OFFSET, now)
-	buffer.writef32(renderStateBuffer, offset + STATE_RENDER_INTERVAL_OFFSET, dt)
+	local dt: number = math.min(math.max(0, now - state.nextRenderTime), MAX_EXTRAPOLATION)
+	state.nextRenderTime = now
 
-	local latestTime: number = buffer.readf64(renderStateBuffer, offset + STATE_LATEST_TIME_OFFSET)
-	local latestPx: number = buffer.readf32(renderStateBuffer, offset + STATE_LATEST_PX_OFFSET)
-	local latestPy: number = buffer.readf32(renderStateBuffer, offset + STATE_LATEST_PY_OFFSET)
-	local latestPz: number = buffer.readf32(renderStateBuffer, offset + STATE_LATEST_PZ_OFFSET)
-	local latestVx: number = buffer.readf32(renderStateBuffer, offset + STATE_LATEST_VX_OFFSET)
-	local latestVy: number = buffer.readf32(renderStateBuffer, offset + STATE_LATEST_VY_OFFSET)
-	local latestVz: number = buffer.readf32(renderStateBuffer, offset + STATE_LATEST_VZ_OFFSET)
-
-	local renderPx: number
-	local renderPy: number
-	local renderPz: number
-	local renderVx: number
-	local renderVy: number
-	local renderVz: number
-	local facingX: number
-	local facingY: number
-	local facingZ: number
-	if bit32.band(flags, STATE_HAS_RENDER) ~= 0 then
-		renderPx = buffer.readf32(renderStateBuffer, offset + STATE_RENDER_PX_OFFSET)
-		renderPy = buffer.readf32(renderStateBuffer, offset + STATE_RENDER_PY_OFFSET)
-		renderPz = buffer.readf32(renderStateBuffer, offset + STATE_RENDER_PZ_OFFSET)
-		renderVx = buffer.readf32(renderStateBuffer, offset + STATE_RENDER_VX_OFFSET)
-		renderVy = buffer.readf32(renderStateBuffer, offset + STATE_RENDER_VY_OFFSET)
-		renderVz = buffer.readf32(renderStateBuffer, offset + STATE_RENDER_VZ_OFFSET)
-		facingX = buffer.readf32(renderStateBuffer, offset + STATE_FACING_X_OFFSET)
-		facingY = buffer.readf32(renderStateBuffer, offset + STATE_FACING_Y_OFFSET)
-		facingZ = buffer.readf32(renderStateBuffer, offset + STATE_FACING_Z_OFFSET)
+	local latestPosition: Vector3 = state.latestPosition
+	local latestVelocity: Vector3 = state.latestVelocity
+	local renderPosition: Vector3
+	local facing: Vector3
+	if state.hasRender then
+		renderPosition = state.renderPosition
+		facing = state.facing
 	else
-		renderPx, renderPy, renderPz = latestPx, latestPy, latestPz
-		renderVx, renderVy, renderVz = latestVx, latestVy, latestVz
-		facingX, facingY, facingZ = renderVx, renderVy, renderVz
+		renderPosition = latestPosition
+		facing = latestVelocity
 	end
 
-	local snapshotAge: number = math.clamp(now - latestTime, 0, MAX_EXTRAPOLATION)
-	local predictedPx: number = latestPx + latestVx * snapshotAge
-	local predictedPy: number = latestPy + latestVy * snapshotAge
-	local predictedPz: number = latestPz + latestVz * snapshotAge
-	local previousRenderPx: number = renderPx
-	local previousRenderPy: number = renderPy
-	local previousRenderPz: number = renderPz
+	local snapshotAge: number = math.clamp(now - state.latestAt, 0, MAX_EXTRAPOLATION)
+	local predictedPosition: Vector3 = latestPosition + latestVelocity * snapshotAge
+	local previousRenderPosition: Vector3 = renderPosition
 
-	local visualErrorX: number = previousRenderPx - predictedPx
-	local visualErrorY: number = previousRenderPy - predictedPy
-	local visualErrorZ: number = previousRenderPz - predictedPz
-	local correctionHalfLife: number = if bit32.band(flags, STATE_HAS_LAST_NETWORK_INTERVAL) ~= 0 then math.clamp(buffer.readf32(renderStateBuffer, offset + STATE_LAST_NETWORK_INTERVAL_OFFSET) * NETWORK_INTERVAL_CORRECTION_RATIO, POSITION_CORRECTION_HALF_LIFE, MAX_POSITION_CORRECTION_HALF_LIFE) else POSITION_CORRECTION_HALF_LIFE
+	local visualError: Vector3 = previousRenderPosition - predictedPosition
+	local correctionHalfLife: number = if state.lastNetworkInterval > 0 then math.clamp(state.lastNetworkInterval * NETWORK_INTERVAL_CORRECTION_RATIO, POSITION_CORRECTION_HALF_LIFE, MAX_POSITION_CORRECTION_HALF_LIFE) else POSITION_CORRECTION_HALF_LIFE
 	local keepError: number = exponentialDecayAlpha(dt, correctionHalfLife)
-	visualErrorX *= keepError
-	visualErrorY *= keepError
-	visualErrorZ *= keepError
-	if visualErrorX * visualErrorX + visualErrorY * visualErrorY + visualErrorZ * visualErrorZ <= SNAP_DISTANCE_SQUARED then
-		visualErrorX, visualErrorY, visualErrorZ = 0, 0, 0
+	visualError *= keepError
+	if visualError:Dot(visualError) <= SNAP_DISTANCE_SQUARED then
+		visualError = Vector3.zero
 	end
 
-	renderPx = predictedPx + visualErrorX
-	renderPy = predictedPy + visualErrorY
-	renderPz = predictedPz + visualErrorZ
-	local desiredMoveX: number = renderPx - previousRenderPx
-	local desiredMoveY: number = renderPy - previousRenderPy
-	local desiredMoveZ: number = renderPz - previousRenderPz
-	local desiredMoveLength: number = math.sqrt(desiredMoveX * desiredMoveX + desiredMoveY * desiredMoveY + desiredMoveZ * desiredMoveZ)
-	local targetLookX: number
-	local targetLookY: number
-	local targetLookZ: number
-	if desiredMoveLength > 0.001 then
-		local inverseLength: number = 1 / desiredMoveLength
-		targetLookX, targetLookY, targetLookZ = desiredMoveX * inverseLength, desiredMoveY * inverseLength, desiredMoveZ * inverseLength
-	else
-		targetLookX, targetLookY, targetLookZ = facingX, facingY, facingZ
-	end
+	renderPosition = predictedPosition + visualError
+	local desiredMove: Vector3 = renderPosition - previousRenderPosition
+	local targetLook: Vector3 = if desiredMove.Magnitude > 0.001 then desiredMove.Unit else facing
 
 	local facingKeep: number = exponentialDecayAlpha(dt, ORIENTATION_CORRECTION_HALF_LIFE)
-	facingX = facingX * facingKeep + targetLookX * (1 - facingKeep)
-	facingY = facingY * facingKeep + targetLookY * (1 - facingKeep)
-	facingZ = facingZ * facingKeep + targetLookZ * (1 - facingKeep)
-	local facingLength: number = math.sqrt(facingX * facingX + facingY * facingY + facingZ * facingZ)
-	if facingLength > 0.001 then
-		local inverseFacingLength: number = 1 / facingLength
-		facingX, facingY, facingZ = facingX * inverseFacingLength, facingY * inverseFacingLength, facingZ * inverseFacingLength
-	else
-		facingX, facingY, facingZ = 0, 0, 1
-	end
+	facing = facing * facingKeep + targetLook * (1 - facingKeep)
+	facing = if facing.Magnitude > 0.001 then facing.Unit else Vector3.zAxis
 
-	local desiredSpeed: number = if dt > 0 then math.max(0, (desiredMoveX * facingX + desiredMoveY * facingY + desiredMoveZ * facingZ) / dt) else 0
-	renderVx, renderVy, renderVz = facingX * desiredSpeed, facingY * desiredSpeed, facingZ * desiredSpeed
-	renderPx, renderPy, renderPz = previousRenderPx + renderVx * dt, previousRenderPy + renderVy * dt, previousRenderPz + renderVz * dt
+	local desiredSpeed: number = if dt > 0 then math.max(0, desiredMove:Dot(facing) / dt) else 0
+	local renderVelocity: Vector3 = facing * desiredSpeed
+	renderPosition = previousRenderPosition + renderVelocity * dt
 
-	buffer.writef32(renderStateBuffer, offset + STATE_FACING_X_OFFSET, facingX)
-	buffer.writef32(renderStateBuffer, offset + STATE_FACING_Y_OFFSET, facingY)
-	buffer.writef32(renderStateBuffer, offset + STATE_FACING_Z_OFFSET, facingZ)
-	writeNewState(offset, renderPx, renderPy, renderPz, renderVx, renderVy, renderVz, bit32.bor(flags, STATE_HAS_RENDER))
-
-	local renderPosition: Vector3 = Vector3.new(renderPx, renderPy, renderPz)
+	state.renderPosition = renderPosition
+	state.renderVelocity = renderVelocity
+	state.facing = facing
+	state.hasRender = true
 	if queryIndex then
 		local boidId = boidIdByRenderIndex[index]
 		local model = boidId and boidModelById[boidId]
@@ -638,7 +470,7 @@ local function renderBoid(index: number, now: number, queryIndex: BoidQueryIndex
 			queryIndex:Update(boidId, renderPosition, BoidCollisionConfig.GetRadius(model))
 		end
 	end
-	renderTransforms[index] = CFrame.lookAt(renderPosition, Vector3.new(renderPx + facingX, renderPy + facingY, renderPz + facingZ))
+	renderTransforms[index] = CFrame.lookAt(renderPosition, renderPosition + facing)
 	return true
 end
 
@@ -772,35 +604,24 @@ local function onRenderStepped(frameDt: number): ()
 	debug.profileend()
 end
 
-local function pushSnapshot(boidId: number, serverTime: number, px: number, py: number, pz: number, vx: number, vy: number, vz: number): ()
+local function pushSnapshot(boidId: number, serverTime: number, position: Vector3, velocity: Vector3): ()
 	local index: number? = renderIndexByBoid[boidId]
 	if not index then
 		return
 	end
 
-	local offset: number = stateOffset(index)
-	local flags: number = buffer.readu8(renderStateBuffer, offset + STATE_FLAGS_OFFSET)
-	local latestTime: number
-	if bit32.band(flags, STATE_HAS_LATEST) ~= 0 then
-		latestTime = buffer.readf64(renderStateBuffer, offset + STATE_LATEST_TIME_OFFSET)
-		if serverTime <= latestTime then
+	local state: RenderState = renderStates[index]
+	if state.hasLatest then
+		if serverTime <= state.latestAt then
 			return
 		end
-
-		buffer.writef32(renderStateBuffer, offset + STATE_LAST_NETWORK_INTERVAL_OFFSET, serverTime - latestTime)
-		flags = bit32.bor(flags, STATE_HAS_LAST_NETWORK_INTERVAL)
-	else
-		flags = bit32.bor(flags, STATE_HAS_LATEST)
+		state.lastNetworkInterval = serverTime - state.latestAt
 	end
 
-	buffer.writef64(renderStateBuffer, offset + STATE_LATEST_TIME_OFFSET, serverTime)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_PX_OFFSET, px)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_PY_OFFSET, py)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_PZ_OFFSET, pz)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_VX_OFFSET, vx)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_VY_OFFSET, vy)
-	buffer.writef32(renderStateBuffer, offset + STATE_LATEST_VZ_OFFSET, vz)
-	buffer.writeu8(renderStateBuffer, offset + STATE_FLAGS_OFFSET, flags)
+	state.latestAt = serverTime
+	state.latestPosition = position
+	state.latestVelocity = velocity
+	state.hasLatest = true
 end
 
 local lastSnapshotTimeByBoid:{[number]: number} = {}
@@ -813,8 +634,9 @@ local function acceptSnapshotRow(boidId: number, completionTime: number, px: num
 		return
 	end
 	lastSnapshotTimeByBoid[boidId] = completionTime
-	assignBoidToRenderCell(boidId, px, py, pz)
-	pushSnapshot(boidId, completionTime, px, py, pz, vx, vy, vz)
+	local position: Vector3 = Vector3.new(px, py, pz)
+	assignBoidToRenderCell(boidId, position)
+	pushSnapshot(boidId, completionTime, position, Vector3.new(vx, vy, vz))
 end
 
 local function consumeCellSnapshot(origin: Vector3, networkBoids: buffer, boidCount: number, completionTime: number): ()
@@ -849,8 +671,6 @@ local function registerBoid(boidId: number, boid: Model | BasePart, now: number)
 	motor.Part1 = part
 	motor.Parent = BoidRoot
 
-	motorCount += 1
-
 	local index:number = nextRenderPartIndex
 	renderMotors[index] = motor
 	renderTransforms[index] = part.CFrame
@@ -858,7 +678,7 @@ local function registerBoid(boidId: number, boid: Model | BasePart, now: number)
 	--lastSnapshotTimeByBoid[boidId] = now
 	renderIndexByBoid[boidId] = index
 	boidIdByRenderIndex[index] = boidId
-	initRenderState(index, boidId, now)
+	initRenderState(index, now)
 	--print(`Boid registered at time {now}`)
 
 	nextRenderPartIndex += 1
@@ -893,8 +713,6 @@ local function unregisterBoid(boidId: number): ()
 		return
 	end
 	
-	motorCount -= 1
-
 	removeBoidFromRenderCell(boidId)
 
 	local lastIndex = #renderMotors
@@ -905,7 +723,7 @@ local function unregisterBoid(boidId: number): ()
 	renderMotors[index] = lastMotor
 	renderTransforms[index] = renderTransforms[lastIndex]
 	boidIdByRenderIndex[index] = lastBoidId
-	copyRenderStateRow(lastIndex, index)
+	renderStates[index] = renderStates[lastIndex]
 
 	if lastBoidId then
 		renderIndexByBoid[lastBoidId] = index
@@ -914,6 +732,7 @@ local function unregisterBoid(boidId: number): ()
 
 	renderMotors[lastIndex] = nil
 	renderTransforms[lastIndex] = nil
+	renderStates[lastIndex] = nil
 	boidIdByRenderIndex[lastIndex] = nil
 	removedMotor:Destroy()
 
@@ -1100,20 +919,15 @@ function BoidsRenderer.GetRenderedBoidState(boidId: number): RenderedBoidState?
 	if not index or not groupId then
 		return nil
 	end
-	local offset = stateOffset(index)
-	local flags = buffer.readu8(renderStateBuffer, offset + STATE_FLAGS_OFFSET)
-	local isRendered = bit32.band(flags, STATE_HAS_RENDER) ~= 0
+	local state: RenderState = renderStates[index]
+	local isRendered = state.hasRender
 	return {
 		boidId = boidId,
 		groupId = groupId,
 		cframe = renderTransforms[index],
-		velocity = if isRendered then Vector3.new(
-			buffer.readf32(renderStateBuffer, offset + STATE_RENDER_VX_OFFSET),
-			buffer.readf32(renderStateBuffer, offset + STATE_RENDER_VY_OFFSET),
-			buffer.readf32(renderStateBuffer, offset + STATE_RENDER_VZ_OFFSET)
-		) else Vector3.zero,
+		velocity = if isRendered then state.renderVelocity else Vector3.zero,
 		isRendered = isRendered,
-		renderedAt = if isRendered then buffer.readf64(renderStateBuffer, offset + STATE_NEXT_RENDER_TIME_OFFSET) else nil,
+		renderedAt = if isRendered then state.nextRenderTime else nil,
 		snapshotAt = lastSnapshotTimeByBoid[boidId],
 	}
 end
@@ -1138,8 +952,8 @@ function BoidsRenderer.GetRenderedGroupBounds(groupId: number): RenderedGroupBou
 		if not index then
 			continue
 		end
-		local offset = stateOffset(index)
-		if bit32.band(buffer.readu8(renderStateBuffer, offset + STATE_FLAGS_OFFSET), STATE_HAS_RENDER) == 0 then
+		local state: RenderState = renderStates[index]
+		if not state.hasRender then
 			continue
 		end
 		local position = renderTransforms[index].Position
@@ -1149,7 +963,7 @@ function BoidsRenderer.GetRenderedGroupBounds(groupId: number): RenderedGroupBou
 		maximum = maximum:Max(position + extent)
 		sum += position
 		count += 1
-		oldestRenderedAt = math.min(oldestRenderedAt, buffer.readf64(renderStateBuffer, offset + STATE_NEXT_RENDER_TIME_OFFSET))
+		oldestRenderedAt = math.min(oldestRenderedAt, state.nextRenderTime)
 	end
 	if count == 0 then
 		return nil
@@ -1176,7 +990,7 @@ function BoidsRenderer.PickRenderedBoid(origin: Vector3, direction: Vector3, gro
 	local bestId: number? = nil
 	for index, boidId in boidIdByRenderIndex do
 		if groupId ~= nil and groupIdByBoid[boidId] ~= groupId then continue end
-		if bit32.band(buffer.readu8(renderStateBuffer, stateOffset(index) + STATE_FLAGS_OFFSET), STATE_HAS_RENDER) == 0 then continue end
+		if not renderStates[index].hasRender then continue end
 		local position = renderTransforms[index].Position
 		local offset = position - origin
 		local along = offset:Dot(unit)
