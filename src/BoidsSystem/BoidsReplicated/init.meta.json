@@ -5,7 +5,7 @@
     }
   },
   "attributes": {
-    "ActiveBoidsScenario": "RandomTargetStress",
+    "ActiveBoidsScenario": "PolarSphereObstacle",
     "BoidSimulationMode": "both"
   }
 }

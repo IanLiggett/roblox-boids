@@ -17,7 +17,7 @@ Typing and compilation
 - Use --!strict in every module.
 - Type function parameters, return values, and all non-scalar objects.
 - Scalar values declared and used in the same scope do not require explicit annotations.
-- Use --!native when a script performs heavy Luau computation with little Roblox API usage.
+- Native compilation is available only on the server in a live experience. Use --!native only for heavy Luau computation with little Roblox API usage in server code. Do not add it to client code; Live client tests do not get native compilation and client annotations can make performance results look better in Studio than real client performance.
 
 Input and validation
 
@@ -40,6 +40,9 @@ Control flow and readability
 Performance and lifetime
 
 - Cache repeated expensive lookups in hot paths when the cache lifetime and invalidation behavior are clear. This is the current project-wide rule; add narrower mandatory caching cases later if recurring patterns justify them.
+- Do not preserve an internal API shape when it forces avoidable per-item conversion, copying, or allocation in a hot path. For server hot paths, keep buffer-backed data packed across internal boundaries. On the client, consider unpacking into tables case by case when the tables will persist through many later reads or writes; include the one-time buffer-read cost and expected reuse in that decision. Present established interface changes for owner review before changing them.
+- Without native compilation, buffer reads and writes are slower than table access in virtually all cases. Do not choose buffers on an assumption of faster CPU access; use them when compact storage, transport, or explicit packed representation provides a concrete benefit, and measure the relevant workload.
+- Hoist loop-invariant work out of hot loops. For example, capture a sequence length once when repeatedly using `#sequence` in a loop condition; the length is not implicitly cached for the loop.
 - During unload/stop, disconnect connections and clear pooled tables.
 - Guard delayed or repeating work with both a generation value and enabled state.
 

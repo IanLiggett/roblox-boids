@@ -31,19 +31,22 @@ function CorrectionIntake.New(boids: BoidsApi): Intake
 	end
 
 	local function consume(packet: buffer, sourceTime: number): ()
-		if typeof(packet) ~= "buffer" or type(sourceTime) ~= "number"
-			or sourceTime ~= sourceTime or math.abs(sourceTime) == math.huge then return end
+		if sourceTime ~= sourceTime or math.abs(sourceTime) == math.huge then return end
 
+		-- Validating a packet from the server is pointless and expensive. It should be allowed to fail and throw an error if the server has made a mistake.
 		-- Validate the complete packet before accepting any row.
-		local cursor = 0
-		local length = buffer.len(packet)
-		while cursor < length do
-			if length - cursor < PacketCodec.CELL_HEADER_BYTES then return end
-			local count = buffer.readu16(packet, cursor + 6)
-			cursor += PacketCodec.CELL_HEADER_BYTES + count * PacketCodec.BOID_ROW_BYTES
-			if cursor > length then return end
-		end
+		-- local cursor = 0
+		-- local length = buffer.len(packet)
+		-- while cursor < length do
+		-- 	if length - cursor < PacketCodec.CELL_HEADER_BYTES then return end
+		-- 	local count = buffer.readu16(packet, cursor + 6)
+		-- 	cursor += PacketCodec.CELL_HEADER_BYTES + count * PacketCodec.BOID_ROW_BYTES
+		-- 	if cursor > length then return end
+		-- end
 
+		-- SetReconciliationTargets only iterates over the packet once, so it should accept the packet directly instead of paying a needless cost to copy into a table.
+		-- It should be fine for SetReconciliationTargets to depend so strongly on packet layout, because it's only purpose it to update reconciliation state from the server, which will always arrive in a packet.
+		-- It doesn't need to be a general-purpose API for iterating over boid snapshots, so it should be fine to depend on the packet layout.
 		local accepted: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}} = {}
 		for offset, ox, oy, oz, count in PacketCodec.ForEachCellHeader(packet) do
 			for id, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, count) do

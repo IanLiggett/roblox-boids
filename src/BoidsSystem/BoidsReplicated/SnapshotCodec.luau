@@ -52,7 +52,8 @@ local function appendBoidUnchecked(snapshot: CellSnapshot, boidId: number, local
 end
 
 function SnapshotCodec.AppendBoidReserved(snapshot: CellSnapshot, boidId: number, localPosition: Vector3, velocity: Vector3): ()
-	assert(snapshot.boidCount < capacity(snapshot), "AppendBoidReserved requires sufficient capacity")
+	-- doing an assert here defeats the purpose of reserved capacity. If there wasn't capacity, it will just error anyways.
+	-- assert(snapshot.boidCount < capacity(snapshot), "AppendBoidReserved requires sufficient capacity")
 	appendBoidUnchecked(snapshot, boidId, localPosition, velocity)
 end
 

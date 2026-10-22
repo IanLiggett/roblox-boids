@@ -32,7 +32,7 @@ local DEFAULT_TUNING = {
 	maxSpeed = 20,--20,
 	minSpeed = 3,--3,
 	sight = 60,--32,
-	avoidance = 40, --35,
+	avoidance = 30,-- 40, --35,
 	separation = 100, --100,
 	repulsion = 0,
 	repulsionStrength = 3,
@@ -41,7 +41,7 @@ local DEFAULT_TUNING = {
 	targetBias = 25,
 }
 
-local POLAR_SPHERE_CENTER = Vector3.new(150, 0, 0)
+local POLAR_SPHERE_CENTER = Vector3.new(150, 0, 32)
 local POLAR_SPHERE_RADIUS = 100
 local function makeStaticPath(positions: {Vector3}): {PathNode}
 	local path: {PathNode} = table.create(#positions) :: {PathNode}
@@ -52,6 +52,14 @@ local function makeStaticPath(positions: {Vector3}): {PathNode}
 		}
 	end
 	return path
+end
+
+local function makeWindingPath(positionAt: (number) -> Vector3): {PathNode}
+	local positions: {Vector3} = table.create(48) :: {Vector3}
+	for index = 0, 47 do
+		positions[index + 1] = positionAt(index / 48 * math.pi * 2)
+	end
+	return makeStaticPath(positions)
 end
 
 local function makePolarCrossingPath(): {PathNode}
@@ -485,18 +493,18 @@ Catalog.NewScenario(
 Catalog.NewScenario(
 	"PolarSphereObstacle",
 	function(_player: Player)
-		Fixtures.CreatePolarSphere()
+		Fixtures.CreatePolarSphere(POLAR_SPHERE_CENTER, POLAR_SPHERE_RADIUS, 40)
 		local crossingPath = makePolarCrossingPath()
 		-- local figureEightPath = makePolarFigureEightPath()
 
 		return {
 			{
 				name = "PolarSphereCrossing",
-				boidCount = 5000,
+				boidCount = 10000,
 				center = crossingPath[1].Position :: Vector3,
 				spread = 16,
 				seed = 51004,
-				color = Color3.fromRGB(75, 210, 255),
+				color = Color3.fromRGB(255, 75, 75),
 				tuning = DEFAULT_TUNING,
 				path = crossingPath,
 				switchToClosestNode = true,
@@ -517,6 +525,58 @@ Catalog.NewScenario(
 			--	pathArrivalRadius = 24,
 			--},
 		}
+	end,
+	{},
+	{},
+	8,
+	20,
+	"high",
+	"none"
+)
+
+Catalog.NewScenario(
+	"RandomObstacleShowcase",
+	function(_player: Player)
+		local paths = {
+			makeWindingPath(function(angle: number): Vector3
+				return Vector3.new(300 * math.cos(angle), 120 * math.sin(2 * angle), 300 * math.sin(angle))
+			end),
+			makeWindingPath(function(angle: number): Vector3
+				return Vector3.new(330 * math.sin(angle), 180 * math.sin(angle), 260 * math.sin(2 * angle))
+			end),
+			makeWindingPath(function(angle: number): Vector3
+				return Vector3.new(250 * math.cos(2 * angle), 170 * math.sin(3 * angle), 340 * math.sin(angle))
+			end),
+		}
+		-- Keep selected targets inside obstacles so avoidance is exercised at route nodes.
+		local pathObstaclePositions: {Vector3} = {}
+		for _, path in paths do
+			table.insert(pathObstaclePositions, path[9].Position :: Vector3)
+			table.insert(pathObstaclePositions, path[33].Position :: Vector3)
+		end
+		Fixtures.CreateRandomObstacleField(pathObstaclePositions)
+		local colors = {
+			Color3.fromRGB(75, 210, 255),
+			Color3.fromRGB(255, 175, 70),
+			Color3.fromRGB(140, 235, 125),
+		}
+		local groups: {GroupDefinition} = table.create(3) :: {GroupDefinition}
+		for index, path in paths do
+			groups[index] = {
+				name = `RandomObstacleRoute_{index}`,
+				boidCount = 2200,
+				center = path[1].Position :: Vector3,
+				spread = 22,
+				seed = 52000 + index,
+				color = colors[index],
+				tuning = DEFAULT_TUNING,
+				path = path,
+				switchToClosestNode = true,
+				loops = true,
+				pathArrivalRadius = 32,
+			}
+		end
+		return groups
 	end,
 	{},
 	{},

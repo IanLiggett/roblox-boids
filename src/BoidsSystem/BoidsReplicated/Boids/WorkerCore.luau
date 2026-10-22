@@ -78,7 +78,7 @@ local U8_POS_DEQUANTIZE_SCALE: number = CELL_SIZE / MAX_U8
 local U8_VEL_DEQUANTIZE_SCALE: number = NORM_VELOCITY_RANGE / MAX_U8
 
 
-local NON_NAN = Vector3.new(0.01, 0.01, 0.01)
+local NON_NAN: Vector3 = Vector3.new(0.01, 0.01, 0.01)
 
 local U8_SIZE = 1
 local U16_SIZE = 2
@@ -266,7 +266,7 @@ local function retrieveBoidVelocity(deserializedVelocities:{Vector3}, boidVeloci
 	return deserializedVelocities[boidIndex]
 end
 
-local MAX_SEEN = 100
+local MAX_SEEN = 20
 
 -- Snapshot reconciliation is data-driven rather than a simulation mode. Every
 -- boid has an inert target record, so this adds no per-boid mode branch.

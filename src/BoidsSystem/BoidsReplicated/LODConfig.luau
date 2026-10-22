@@ -69,7 +69,7 @@ LODConfig.PRESET_ATTRIBUTE = PRESET_ATTRIBUTE
 
 -- Lower presets deliberately send substantially less frequent authoritative
 -- correction data. Higher presets trade more network traffic for lower client
--- simulation divergence while retaining the same distance-based LOD shape.
+-- simulation divergence, as well as higher frequency simulation and rendering at the cost of the cpu, while retaining the same distance-based LOD shape.
 local presets: {[PresetName]: Config} = {
 	low = {
 		client = {
@@ -84,7 +84,7 @@ local presets: {[PresetName]: Config} = {
 
 			offscreenHertz = 0.2,
 		peripheralLodDistanceScale = 0.50,
-			maxRenderBoidsPerFrame = 1000000,
+			maxRenderBoidsPerFrame = 100000,
 		},
 		serverSimulation = {
 			nearDistance = 0,
@@ -120,81 +120,81 @@ local presets: {[PresetName]: Config} = {
 	medium = {
 		client = {
 			visibleRenderBands = {
-				{range = 64, hertz = 60}, {range = 128, hertz = 60},
-				{range = 192, hertz = 45}, {range = 256, hertz = 30},
-				{range = 384, hertz = 22.5}, {range = 512, hertz = 15},
-				{range = 640, hertz = 13.125}, {range = 768, hertz = 11.25},
-				{range = 896, hertz = 9.375}, {range = 1024, hertz = 7.5},
-				{range = 1280, hertz = 7.5}, {range = 1536, hertz = 7.5},
+				{range = 64, hertz = 30}, {range = 128, hertz = 25},
+				{range = 192, hertz = 15}, {range = 256, hertz = 10},
+				{range = 384, hertz = 7.5}, {range = 512, hertz = 5},
+				{range = 640, hertz = 2.5}, {range = 768, hertz = 1.5},
+				{range = 896, hertz = 1}, {range = 1024, hertz = 1},
+				{range = 1280, hertz = 0.5}, {range = 1536, hertz = 0.5},
 			},
 
-			offscreenHertz = 2,
+			offscreenHertz = 0.5,
 		peripheralLodDistanceScale = 0.30,
-			maxRenderBoidsPerFrame = 1000000,
+			maxRenderBoidsPerFrame = 100000,
 		},
 		serverSimulation = {
 			nearDistance = 0,
 			farDistance = 768,
-			minIntervalMultiplier = 1,
-			maxIntervalMultiplier = 3,
+			minIntervalMultiplier = 0.15,
+			maxIntervalMultiplier = 0.7,
 			backgroundIntervalMultiplier = 3,
 		},
 		clientPredictionSimulation = {
 			nearDistance = 0,
 			farDistance = 768,
-			minIntervalMultiplier = 1,
-			maxIntervalMultiplier = 3,
+			minIntervalMultiplier = 0.15,
+			maxIntervalMultiplier = 0.7,
 			backgroundIntervalMultiplier = 3,
 		},
 		clientLocalSimulation = {
 			nearDistance = 0,
 			farDistance = 768,
-			minIntervalMultiplier = 1,
-			maxIntervalMultiplier = 3,
+			minIntervalMultiplier = 0.15,
+			maxIntervalMultiplier = 0.7,
 			backgroundIntervalMultiplier = 3,
 		},
 		network = {
 			baseInterval = 2,
 			nearDistance = 0,
 			farDistance = 512,
-			minIntervalMultiplier = 3,
-			maxIntervalMultiplier = 6,
+			minIntervalMultiplier = 4,
+			maxIntervalMultiplier = 8,
 		},
 	},
 	high = {
 		client = {
 			visibleRenderBands = {
-				{range = 64, hertz = 60}, {range = 128, hertz = 60},
-				{range = 192, hertz = 45}, {range = 256, hertz = 30},
-				{range = 384, hertz = 22.5}, {range = 512, hertz = 15},
-				{range = 640, hertz = 13.125}, {range = 768, hertz = 11.25},
-				{range = 896, hertz = 9.375}, {range = 1024, hertz = 7.5},
-				{range = 1280, hertz = 7.5}, {range = 1536, hertz = 7.5},
+				{range = 64, hertz = 30}, {range = 128, hertz = 25},
+				{range = 192, hertz = 20}, {range = 256, hertz = 15},
+				{range = 384, hertz = 10}, {range = 512, hertz = 7.5},
+				{range = 640, hertz = 5}, {range = 768, hertz = 2.5},
+				{range = 896, hertz = 2}, {range = 1024, hertz = 1.5},
+				{range = 1280, hertz = 1}, {range = 1536, hertz = 0.5},
 			},
 
-			offscreenHertz = 4,
-		peripheralLodDistanceScale = 0.15,
-			maxRenderBoidsPerFrame = 1000000,
+			offscreenHertz = 0.5,
+			peripheralLodDistanceScale = 0.15,
+			maxRenderBoidsPerFrame = 100000,
 		},
 		serverSimulation = {
 			nearDistance = 0,
 			farDistance = 1024,
-			minIntervalMultiplier = 1,
-			maxIntervalMultiplier = 2,
+			minIntervalMultiplier = 0.1,
+			maxIntervalMultiplier = 0.5,
 			backgroundIntervalMultiplier = 2,
 		},
 		clientPredictionSimulation = {
 			nearDistance = 0,
 			farDistance = 1024,
-			minIntervalMultiplier = 1,
-			maxIntervalMultiplier = 2,
+			minIntervalMultiplier = 0.1,
+			maxIntervalMultiplier = 0.5,
 			backgroundIntervalMultiplier = 2,
 		},
 		clientLocalSimulation = {
 			nearDistance = 0,
 			farDistance = 1024,
-			minIntervalMultiplier = 1,
-			maxIntervalMultiplier = 2,
+			minIntervalMultiplier = 0.1,
+			maxIntervalMultiplier = 0.5,
 			backgroundIntervalMultiplier = 2,
 		},
 		network = {
@@ -202,7 +202,7 @@ local presets: {[PresetName]: Config} = {
 			nearDistance = 0,
 			farDistance = 512,
 			minIntervalMultiplier = 2,
-			maxIntervalMultiplier = 3,
+			maxIntervalMultiplier = 4,
 		},
 	},
 }

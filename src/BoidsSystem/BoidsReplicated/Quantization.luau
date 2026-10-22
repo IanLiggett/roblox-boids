@@ -35,7 +35,7 @@ Quantization.MAX_U8_INT = MAX_U8_INT
 local MAX_U16_INT = 2^(8*U16_SIZE) - 1
 Quantization.MAX_U16_INT = MAX_U16_INT
 
-local CELL_SIZE:number = 128
+local CELL_SIZE:number = 64
 Quantization.CELL_SIZE = CELL_SIZE
 
 local NORM_VELOCITY_MAX:number = 1

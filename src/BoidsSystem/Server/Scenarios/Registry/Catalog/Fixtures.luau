@@ -3,11 +3,8 @@
 local Fixtures = {}
 local owned: {[Folder]: boolean} = {}
 local generation = 0
-local POLAR_SPHERE_CENTER = Vector3.new(150, 0, 0)
-local POLAR_SPHERE_RADIUS = 100
-local POLAR_SPHERE_OPENING_RADIUS = 40
 
-local function createPolarSphereObstacleCourse(): ()
+local function createPolarSphereObstacleCourse(PolarSphereCenter: Vector3, PolarSphereRadius: number, PolarSphereOpeningRadius: number): ()
 	local existingCourse = workspace:FindFirstChild("BoidPolarSphereCourse")
 	if existingCourse then
 		existingCourse:Destroy()
@@ -27,7 +24,7 @@ local function createPolarSphereObstacleCourse(): ()
 	local longitudeStep = math.pi * 2 / longitudeSegments
 	local panelOverlap = 2
 	local panelThickness = 8
-	local openingAngle = math.asin(POLAR_SPHERE_OPENING_RADIUS / POLAR_SPHERE_RADIUS)
+	local openingAngle = math.asin(PolarSphereOpeningRadius / PolarSphereRadius)
 	local color = Color3.fromRGB(90, 105, 130)
 
 	for latitudeIndex = 1, latitudeSegments do
@@ -38,7 +35,7 @@ local function createPolarSphereObstacleCourse(): ()
 		end
 
 		local latitude = (latitudeStart + latitudeEnd) * 0.5
-		local latitudeWidth = 2 * POLAR_SPHERE_RADIUS * math.sin(latitudeStep * 0.5) + panelOverlap
+		local latitudeWidth = 2 * PolarSphereRadius * math.sin(latitudeStep * 0.5) + panelOverlap
 		for longitudeIndex = 0, longitudeSegments - 1 do
 			local longitude = (longitudeIndex + 0.5) * longitudeStep
 			local sinLatitude = math.sin(latitude)
@@ -53,10 +50,10 @@ local function createPolarSphereObstacleCourse(): ()
 				-sinLatitude,
 				math.cos(latitude) * math.sin(longitude)
 			)
-			local longitudeWidth = 2 * POLAR_SPHERE_RADIUS * sinLatitude * math.sin(longitudeStep * 0.5) + panelOverlap
+			local longitudeWidth = 2 * PolarSphereRadius * sinLatitude * math.sin(longitudeStep * 0.5) + panelOverlap
 			local halfDiagonal = 0.5 * math.sqrt(longitudeWidth * longitudeWidth + latitudeWidth * latitudeWidth)
-			local radialInset = POLAR_SPHERE_RADIUS - math.sqrt(
-				POLAR_SPHERE_RADIUS * POLAR_SPHERE_RADIUS - halfDiagonal * halfDiagonal
+			local radialInset = PolarSphereRadius - math.sqrt(
+				PolarSphereRadius * PolarSphereRadius - halfDiagonal * halfDiagonal
 			)
 			local panel = Instance.new("Part")
 			panel.Name = string.format("Panel_%02d_%02d", latitudeIndex, longitudeIndex + 1)
@@ -69,7 +66,7 @@ local function createPolarSphereObstacleCourse(): ()
 			panel.Transparency = 0.7
 			panel.Size = Vector3.new(longitudeWidth, latitudeWidth, panelThickness)
 			panel.CFrame = CFrame.fromMatrix(
-				POLAR_SPHERE_CENTER + radial * (POLAR_SPHERE_RADIUS - radialInset),
+				PolarSphereCenter + radial * (PolarSphereRadius - radialInset),
 				tangentLongitude,
 				tangentLatitude,
 				radial
@@ -110,6 +107,75 @@ local function createObstacleAvoidanceCourse(): ()
 	addObstacle("CornerReturn", Vector3.new(300, 0, 84), Vector3.new(120, 100, 12))
 	addObstacle("GapLower", Vector3.new(500, 0, -55), Vector3.new(12, 100, 90))
 	addObstacle("GapUpper", Vector3.new(500, 0, 55), Vector3.new(12, 100, 90))
+end
+
+local function createRandomObstacleField(pathNodePositions: {Vector3}): ()
+	local existingField = workspace:FindFirstChild("BoidRandomObstacleField")
+	if existingField then
+		existingField:Destroy()
+	end
+
+	local field = Instance.new("Folder")
+	field.Name = "BoidRandomObstacleField"
+	field.Parent = workspace
+	owned[field] = true
+	field.Destroying:Once(function() owned[field] = nil end)
+
+	local rng = Random.new()
+	local colors = {
+		Color3.fromRGB(80, 145, 190),
+		Color3.fromRGB(135, 105, 180),
+		Color3.fromRGB(195, 135, 75),
+	}
+	local shapes = {Enum.PartType.Block, Enum.PartType.Ball, Enum.PartType.Cylinder}
+	for index = 1, 70 do
+		local obstacle = Instance.new("Part")
+		obstacle.Name = `Obstacle_{index}`
+		obstacle.Shape = shapes[rng:NextInteger(1, #shapes)]
+		obstacle.Anchored = true
+		obstacle.CanCollide = true
+		obstacle.CanQuery = true
+		obstacle.CanTouch = false
+		obstacle.Material = Enum.Material.Glass
+		obstacle.Transparency = 0.55
+		obstacle.Color = colors[rng:NextInteger(1, #colors)]
+		obstacle.Size = Vector3.new(
+			rng:NextNumber(22, 62),
+			rng:NextNumber(22, 62),
+			rng:NextNumber(22, 62)
+		)
+		obstacle.CFrame = CFrame.new(
+			rng:NextNumber(-350, 350),
+			rng:NextNumber(-180, 180),
+			rng:NextNumber(-350, 350)
+		) * CFrame.Angles(
+			rng:NextNumber(0, math.pi),
+			rng:NextNumber(0, math.pi),
+			rng:NextNumber(0, math.pi)
+		)
+		obstacle.Parent = field
+	end
+
+	for index, position in pathNodePositions do
+		local obstacle = Instance.new("Part")
+		obstacle.Name = `PathObstacle_{index}`
+		obstacle.Shape = shapes[rng:NextInteger(1, #shapes)]
+		obstacle.Anchored = true
+		obstacle.CanCollide = true
+		obstacle.CanQuery = true
+		obstacle.CanTouch = false
+		obstacle.Material = Enum.Material.Glass
+		obstacle.Transparency = 0.55
+		obstacle.Color = colors[rng:NextInteger(1, #colors)]
+		local size = rng:NextNumber(26, 40)
+		obstacle.Size = Vector3.new(size, size, size)
+		obstacle.CFrame = CFrame.new(position) * CFrame.Angles(
+			rng:NextNumber(0, math.pi),
+			rng:NextNumber(0, math.pi),
+			rng:NextNumber(0, math.pi)
+		)
+		obstacle.Parent = field
+	end
 end
 
 
@@ -166,7 +232,7 @@ function Fixtures.CreateRandomTargets(): {BasePart}
 					break
 				end
 
-				for _, target: BasePart in targetFolder:GetChildren() do
+				for _, target: BasePart in targetFolder:GetChildren() :: {BasePart} do
 					target.Position = nextRandomTargetPosition(randomTargetStressRng)
 				end
 			end
@@ -183,4 +249,5 @@ function Fixtures.Stop(): ()
 end
 Fixtures.CreatePolarSphere = createPolarSphereObstacleCourse
 Fixtures.CreateObstacleCourse = createObstacleAvoidanceCourse
+Fixtures.CreateRandomObstacleField = createRandomObstacleField
 return Fixtures

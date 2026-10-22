@@ -200,3 +200,22 @@ Runtime aliases can make external checks pass while Studio's edit-time hierarchy
 Current guardrail
 
 Preserve runtime WaitForChild lookups, but annotate the retrieved folder/module with typeof pointing at its concrete edit-time instance under ServerScriptService.BoidsSystem. Test the ordinary edit-time sourcemap without runtime aliases. These annotations must live in the source shipped to Studio, not only in external checker configuration.
+
+---
+
+[PERFORMANCE] Keep packed correction data packed across internal APIs
+
+Tags: performance, buffer, correction, CorrectionIntake, SetReconciliationTargets, allocation, copying, loop invariants
+
+Rejected
+
+Decoding a correction buffer into per-boid records, building a second table, then passing that table across an internal API only because the existing method accepts tables. Constructing tables repeatedly for other reasons to satisfy an existing API when the data could be sent without pointless allocation and copying has the same problem.
+Repeating sequence-length work such as `#items` in a hot loop condition is the same kind of avoidable cost.
+
+Reason
+
+Per-item materialization adds table writes, allocations, garbage-collection pressure, and possibly another traversal or copy to a high-volume path. A loop condition does not cache the result of `#items`, so repeating it also adds work as the loop runs.
+
+Current guardrail
+
+Preserve packet validation, accepted-ID/time ordering, and lifetime checks. In server hot paths, keep buffer-backed data packed across internal APIs. On the client, unpack incoming buffers into reusable tables only when those tables will persist through many subsequent reads or writes; the initial unpack pays the same slower buffer-read cost as direct use, so include that cost and expected reuse when deciding. When changing an established interface, present the specific boundary and expected cost to the owner for review first. Hoist loop-invariant lengths and lookups out of hot loops when their values remain valid for the loop's lifetime.
