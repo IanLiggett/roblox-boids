@@ -28,6 +28,7 @@ Current implementation
 - BoidsRenderer anchors an invisible identity-space BoidRoot.
 - Each rendered boid is driven as Motor6D.Part1, with BoidRoot as Part0.
 - Calculated boid CFrames are assigned to Motor6D.Transform.
+- Persistent render state is stored in parallel contiguous lists, with Vector3 values and CFrame poses. Buffers remain only at the existing snapshot/lifecycle transport boundaries.
 - Snapshot rows assign rendered boids to dense 64-stud renderer-owned cell lists; this subdivides, but does not change, the 128-stud simulation/query-cell contract.
 - The renderer compiles visible/offscreen cell intervals from LODConfig render bands and assigns Motor6D.Transform only for boids processed by due cells. It does not maintain a per-boid priority heap or scan every rendered boid each frame.
 
