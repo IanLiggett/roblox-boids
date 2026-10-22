@@ -137,8 +137,8 @@ local renderCellKeyByBoid: RenderCellKeyByBoid = {}
 local agingRenderCells: {RenderCell} = {}
 local nextAgingRenderCellIndex: number = 1
 
--- Renderer cells intentionally subdivide the unchanged 128-stud simulation/query cells.
-local RENDER_CELL_SIZE: number = 64
+-- Renderer cells intentionally subdivide the unchanged simulation/query cells.
+local RENDER_CELL_SIZE: number = 32
 local CELL_HALF_SIZE: number = RENDER_CELL_SIZE * 0.5
 local CELL_BOUND_RADIUS: number = RENDER_CELL_SIZE * math.sqrt(3) * 0.5
 local AGING_THRESHOLD: number = 0.5

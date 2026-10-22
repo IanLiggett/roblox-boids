@@ -500,7 +500,7 @@ Catalog.NewScenario(
 		return {
 			{
 				name = "PolarSphereCrossing",
-				boidCount = 10000,
+				boidCount = 20000,
 				center = crossingPath[1].Position :: Vector3,
 				spread = 16,
 				seed = 51004,
@@ -530,7 +530,7 @@ Catalog.NewScenario(
 	{},
 	8,
 	20,
-	"high",
+	"low",
 	"none"
 )
 
