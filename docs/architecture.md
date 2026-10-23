@@ -12,7 +12,7 @@ JobBuilder dispatches earliest-due cell work using free Actor capacity rather th
 
 ## Replication, rendering, and queries
 
-SimulationReplication owns authoritative lifecycle/group state and reliable bootstrap. NetworkResults preserves correction source time and direct local-buffer delivery. Corrections steer simulation, not direct renderer placement. The renderer turns toward its smoothed target and moves along facing without snapshot/orientation snaps.
+SimulationReplication owns authoritative lifecycle/group state and reliable bootstrap. The startup-only `BoidClientPresentationMode` selects either client simulation with network corrections or direct network-packet rendering; the default is `simulation`. Direct renderer mode retains reliable lifecycle handling but starts no client Actors or simulation job scheduler. It is incompatible with client-only `BoidSimulationMode`. NetworkResults preserves correction source time and direct local-buffer delivery. Both snapshot paths use renderer stale-time acceptance and the no-snap facing-first reconciliation rule.
 
 Boid IDs share all 65,536 u16 slots in each process. The coordinator allocates server IDs from the lowest free slot and client-local IDs from the highest, using hierarchical free bitmaps. Reliable client intake reserves server IDs even while commands are queued. A collision retires the local boid through normal settlement before creating the server replica; surviving IDs never change. Group IDs retain their server/client partition. Ownership is explicit, never inferred from a boid ID's numeric range.
 

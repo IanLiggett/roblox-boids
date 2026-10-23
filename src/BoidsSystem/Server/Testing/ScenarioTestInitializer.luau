@@ -21,6 +21,7 @@ local PerformanceTelemetry = require(Testing:WaitForChild("PerformanceTelemetry"
 local BenchmarkHarness = require(Testing:WaitForChild("BenchmarkHarness"))
 local Delivery = require(BoidsReplicated.Scenarios.Delivery)
 local QueryIndexConfig = require(BoidsReplicated.QueryIndexConfig)
+local ClientPresentationConfig = require(BoidsReplicated.ClientPresentationConfig)
 local BoidQueries = require(packageRoot.Server.BoidQueryIndexServer)
 local HostHooks = require(BoidsReplicated.Scenarios.HostHooks)
 local ScenarioTestInitializer = {}
@@ -48,6 +49,7 @@ local function startSelectedTest(): ()
 		return
 	end
 
+	ClientPresentationConfig.Resolve()
 	started = true
 	Scenarios.ConfigureRuntime(activeScenario, Boids)
 	local runtimeConfig = BenchmarkHarness.GetRuntimeConfiguration(activeScenario)

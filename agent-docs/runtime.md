@@ -11,7 +11,7 @@ Invariant
 - Reusable Boids code is simulation-only.
 - BoidsSystem includes its shared simulation runtime, Scenarios, Testing, and scenario observation. Scenario/test/observation orchestration stays inside the package but outside Boids/WorkerCore simulation calculations.
 - Game-owned combat health and timed field lifecycles remain outside the reusable simulation code.
-- Server and client processes use the same shared simulation implementation rather than divergent flocking algorithms.
+- Server and client simulation modes use the same shared implementation rather than divergent flocking algorithms. Direct renderer mode does not start client Actor simulation.
 
 Shared runtime
 
@@ -19,6 +19,7 @@ Current implementation / invariant within the current package design
 
 - BoidsReplicated.Boids is the shared simulation coordinator and packed WorkerCore implementation in each process.
 - Server and client Actor bootstraps load the same WorkerCore.
+- `BoidClientPresentationMode` is resolved once at process startup. `simulation` keeps the client Actor/job runtime and routes `BoidJobUpdate` through CorrectionIntake; `renderer` skips client Actors and JobBuilder while retaining the reliable SimulationReplication coordinator for renderer lifecycle, then routes packets directly to the renderer. Renderer mode requires server simulation (`BoidSimulationMode` is not `client`).
 
 Explicit process startup
 

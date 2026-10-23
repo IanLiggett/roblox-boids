@@ -1,8 +1,6 @@
 --!strict
 --!native
 
-local PacketCodec = require(script.Parent.Parent.NetworkResults.PacketCodec)
-
 local CorrectionIntake = {}
 
 export type Target = {position: Vector3, velocity: Vector3, snapshotTime: number}

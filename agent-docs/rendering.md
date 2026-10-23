@@ -4,10 +4,10 @@ Renderer ownership and transport
 
 Invariant
 
-- BoidsClient.BoidsRenderer is an inert-on-import ModuleScript. ClientSimulation.Start explicitly calls its idempotent Start before binding it through ClientRendererBridge.SetRenderer and starting simulation. Only Start creates the single root/folder and presentation callback; read/codec consumers do not start rendering. The viewing-camera hook is supplied by ClientSimulation, which owns reporting and replicated intake.
+- BoidsClient.BoidsRenderer is an inert-on-import ModuleScript. ClientSimulation.Start explicitly calls its idempotent Start before binding it through ClientRendererBridge.SetRenderer. Only Start creates the single root/folder and presentation callback; read/codec consumers do not start rendering. The viewing-camera hook is supplied by ClientSimulation, which owns reporting and replicated intake.
 - ClientRendererBridge calls the renderer directly for client-local snapshots and lifecycle updates.
 - NetworkResults.PublishSimulationSnapshot delegates to its LocalDelivery child, which forwards each populated cell's origin, existing canonical quantized row buffer, actual boidCount and original completionTime through ClientRendererBridge.ConsumeCellSnapshot(origin: Vector3, networkBoids: buffer, boidCount: number, completionTime: number). It does not assemble packets or copy the row payload.
-- Direct cell intake retains renderer row acceptance, stale/equal-time filtering, render-cell assignment and reconciliation. PacketCodec constructs/decodes actual network packets; CorrectionIntake consumes them as simulation steering targets, never direct renderer poses.
+- Direct cell intake and direct network-packet intake share renderer row acceptance, stale/equal-time filtering, render-cell assignment and reconciliation. `BoidClientPresentationMode=renderer` decodes packed network cells directly into that intake; `simulation` routes them through CorrectionIntake as steering targets.
 - Do not reintroduce a BindableEvent snapshot transport that deep-copies local snapshot/table payloads.
 
 Renderer lifecycle intake
@@ -15,8 +15,8 @@ Renderer lifecycle intake
 Current contract
 
 - The coordinator's local spawn/delete bridge carries process-local boid lifetimes. Renderer tombstones reject delayed retired spawns/deletes without corrupting a reused ID; duplicate registration is ignored. A rejected batch cannot recreate an empty group.
-- Snapshots for unknown IDs are ignored before timestamp tracking, so pre-spawn rows cannot poison the new rendered lifetime. Accepted snapshots still use the unchanged no-snap reconciliation path.
-- Renderer alone owns dense row swaps, cell/model/Motor/query-index removal and group presentation state. Group deletion clears its color/count registry as well. Legacy renderer remote intake was retired by explicit owner decision (2026-10-17). SimulationState supplies replicated lifecycle and BoidJobUpdate supplies steering corrections; there is no alternate renderer producer.
+- Snapshots for unknown IDs are ignored before timestamp tracking, so pre-spawn rows cannot poison the new rendered lifetime. This applies to local cell buffers and direct network packets; accepted snapshots use the unchanged no-snap reconciliation path.
+- Renderer alone owns dense row swaps, cell/model/Motor/query-index removal and group presentation state. Group deletion clears its color/count registry as well. The legacy renderer remote listeners were retired by explicit owner decision (2026-10-17); current `BoidJobUpdate` packets feed either CorrectionIntake or the renderer according to startup configuration.
 
 Rendered boid representation
 

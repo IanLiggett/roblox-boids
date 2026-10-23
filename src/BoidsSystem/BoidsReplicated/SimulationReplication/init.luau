@@ -4,10 +4,10 @@
 --[[
 SimulationReplication
 =====================
-Replicates the authoritative server simulation's low-frequency control state to
-each client. Clients instantiate the same Boids coordinator locally; the
-existing server snapshot packets are then consumed only as reconciliation
-targets, never as the primary rendering source.
+Replicates authoritative lifecycle and low-frequency control state to each
+client. In client-simulation presentation mode, snapshot packets steer the
+local coordinator. In renderer presentation mode, the same packets feed the
+renderer directly while reliable lifecycle handling remains here.
 ]]
 
 local Players = game:GetService("Players")
@@ -20,6 +20,7 @@ local CorrectionIntake = require(script.CorrectionIntake)
 local Replay = require(script.Replay)
 local Bootstrap = require(script.Bootstrap)
 local RuntimeTypes = require(script.Parent.RuntimeTypes)
+local ClientRendererBridge = require(script.Parent.ClientRendererBridge)
 local SimulationReplication = {}
 
 
@@ -493,7 +494,7 @@ function SimulationReplication.GetClientGroup(groupId: number): Group?
 	return clientGroupsById[groupId]
 end
 
-function SimulationReplication.StartClient(boids: BoidsApi): ()
+function SimulationReplication.StartClient(boids: BoidsApi, renderPacketsDirectly: boolean?): ()
 	if not RunService:IsClient() or clientStarted then
 		return
 	end
@@ -503,7 +504,7 @@ function SimulationReplication.StartClient(boids: BoidsApi): ()
 	local groups: {[number]: Group} = clientGroupsById
 	local pendingTargets: {[number]: ReplicatedTarget} = {}
 	local pendingSpawns: {[number]: PendingClientSpawn} = {}
-	local corrections: CorrectionIntake.Intake = CorrectionIntake.New(boids)
+	local corrections: CorrectionIntake.Intake? = if renderPacketsDirectly then nil else CorrectionIntake.New(boids)
 	clientCorrections = corrections
 	local boidGroups: {[number]: number} = {}
 
@@ -605,7 +606,9 @@ function SimulationReplication.StartClient(boids: BoidsApi): ()
 				for _, boidId in a :: {number} do
 					if pendingSpawns[boidId] then boids.ReleaseServerBoidId(boidId) end
 					pendingSpawns[boidId], boidGroups[boidId] = nil, nil
-					corrections.Retire(boidId, if type(b) == "number" then b else nil)
+					if not renderPacketsDirectly then
+						assert(corrections).Retire(boidId, if type(b) == "number" then b else nil)
+					end
 					if boids.IsServerBoid(boidId) then boids.QueueDeleteBoid(boidId) end
 				end
 			end
@@ -613,7 +616,7 @@ function SimulationReplication.StartClient(boids: BoidsApi): ()
 			local group = groups[a :: number]
 			for id, groupId in boidGroups do
 				if groupId == a then
-					corrections.Retire(id, nil)
+					if not renderPacketsDirectly then assert(corrections).Retire(id, nil) end
 					if pendingSpawns[id] then boids.ReleaseServerBoidId(id) end
 					pendingSpawns[id], boidGroups[id] = nil, nil
 				end
@@ -669,7 +672,12 @@ function SimulationReplication.StartClient(boids: BoidsApi): ()
 		end
 	end)
 
-	boidJobUpdate.OnClientEvent:Connect(corrections.Consume)
+	if renderPacketsDirectly then
+		boidJobUpdate.OnClientEvent:Connect(ClientRendererBridge.ConsumeNetworkPacket)
+	else
+		assert(corrections)
+		boidJobUpdate.OnClientEvent:Connect(corrections.Consume)
+	end
 
 	requestSimulationState:FireServer()
 end

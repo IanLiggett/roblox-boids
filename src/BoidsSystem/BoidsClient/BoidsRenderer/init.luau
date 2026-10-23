@@ -2,13 +2,14 @@
 
 --[[ BoidsRenderer
 Description:
-	Client-side boid renderer. Receives spawn batches and unreliable simulation
-	snapshots, instantiates boid models, smooths/extrapolates render state, and
+	Client-side boid renderer. Receives spawn batches and unreliable network or
+	local simulation snapshots, instantiates boid models, smooths render state, and
 	applies visible boid CFrames through per-boid Motor6D transforms.
 
 Runtime API:
 	Start(): (): creates the root and installs selected callbacks once
 	receiveNewBoidBatch(networkBoidsBatch: NetworkBoidsBatch): creates render models
+	consumeNetworkPacket(packet: buffer, sourceTime: number): accepts server snapshot packets
 	receiveDeleteBoidBatch(packet: buffer): removes rendered boids
 	receiveDeleteGroup(groupId: number): removes rendered group state
 
@@ -634,7 +635,15 @@ local function consumeCellSnapshot(origin: Vector3, networkBoids: buffer, boidCo
 	end
 end
 
--- Server corrections are consumed only by the replicated simulation as steering targets.
+local function consumeNetworkPacket(packet: buffer, sourceTime: number): ()
+	for offset, ox, oy, oz, count in PacketCodec.ForEachCellHeader(packet) do
+		for boidId, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, count) do
+			acceptSnapshotRow(boidId, sourceTime, ox + px, oy + py, oz + pz, vx, vy, vz)
+		end
+	end
+end
+
+-- Client-simulation mode consumes server packets as steering targets; renderer mode uses consumeNetworkPacket above.
 
 local nextRenderPartIndex = 1
 
@@ -1084,6 +1093,7 @@ function BoidsRenderer.Start(viewingCameraObserver: ((CFrame, number) -> ())?): 
 end
 
 BoidsRenderer.ConsumeCellSnapshot = consumeCellSnapshot
+BoidsRenderer.ConsumeNetworkPacket = consumeNetworkPacket
 BoidsRenderer.ReceiveNewBoidBatch = receiveNewBoidBatch
 BoidsRenderer.ReceiveDeleteBoidBatch = receiveDeleteBoidBatch
 BoidsRenderer.ReceiveDeleteGroup = receiveDeleteGroup
