@@ -14,7 +14,7 @@ export type Intake = {
 type BoidsApi = {
 	IsServerBoid: (number) -> boolean,
 	IsDeletionPending: (number) -> boolean,
-	SetReconciliationTargets: ({{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}}) -> (),
+	SetReconciliationTargets: (buffer, number, (number, Vector3, Vector3, number) -> boolean) -> (),
 }
 
 -- One owner for accepted correction state and retirement cutoffs. Unknown IDs
@@ -44,23 +44,14 @@ function CorrectionIntake.New(boids: BoidsApi): Intake
 		-- 	if cursor > length then return end
 		-- end
 
-		-- SetReconciliationTargets only iterates over the packet once, so it should accept the packet directly instead of paying a needless cost to copy into a table.
-		-- It should be fine for SetReconciliationTargets to depend so strongly on packet layout, because it's only purpose it to update reconciliation state from the server, which will always arrive in a packet.
-		-- It doesn't need to be a general-purpose API for iterating over boid snapshots, so it should be fine to depend on the packet layout.
-		local accepted: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}} = {}
-		for offset, ox, oy, oz, count in PacketCodec.ForEachCellHeader(packet) do
-			for id, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, count) do
-				local previous = targets[id]
-				if not boids.IsServerBoid(id) or boids.IsDeletionPending(id)
-					or sourceTime <= (retiredAt[id] or -math.huge)
-					or (previous and sourceTime <= previous.snapshotTime) then continue end
-				local position = Vector3.new(ox + px, oy + py, oz + pz)
-				local velocity = Vector3.new(vx, vy, vz)
-				targets[id] = {position = position, velocity = velocity, snapshotTime = sourceTime}
-				table.insert(accepted, {boidId = id, position = position, velocity = velocity, snapshotTime = sourceTime})
-			end
-		end
-		boids.SetReconciliationTargets(accepted)
+		boids.SetReconciliationTargets(packet, sourceTime, function(id: number, position: Vector3, velocity: Vector3, time: number): boolean
+			local previous = targets[id]
+			if not boids.IsServerBoid(id) or boids.IsDeletionPending(id)
+				or time <= (retiredAt[id] or -math.huge)
+				or (previous and time <= previous.snapshotTime) then return false end
+			targets[id] = {position = position, velocity = velocity, snapshotTime = time}
+			return true
+		end)
 	end
 
 	-- Scalars/immutable vectors only; diagnostics cannot mutate acceptance state.

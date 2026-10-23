@@ -54,7 +54,7 @@ export type Replication = {
 	IsDeletionPending: (number) -> boolean,
 	IsGroupRetiring: (number) -> boolean,
 	DestroyGroup: (Group) -> (),
-	SetReconciliationTargets: ({{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}}) -> (),
+	SetReconciliationTargets: (buffer, number, (number, Vector3, Vector3, number) -> boolean) -> (),
 }
 export type Api = Replication & ClientObservation & IndexSource & {
 	SetLODPreset: ("low" | "medium" | "high") -> boolean,

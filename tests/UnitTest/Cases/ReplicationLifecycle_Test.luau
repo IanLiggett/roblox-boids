@@ -31,7 +31,16 @@ return function(t: UnitTest.Context): ()
 		local intake = intakeModule.New({
 			IsServerBoid = function(): boolean return live end,
 			IsDeletionPending = function(): boolean return deleting end,
-			SetReconciliationTargets = function(rows: {Correction}): () for _, row in rows do table.insert(received, row) end end,
+			SetReconciliationTargets = function(data: buffer, snapshotTime: number, accept: (number, Vector3, Vector3, number) -> boolean): ()
+				for offset, ox, oy, oz, count in network.ForEachCellHeader(data) do
+					for id, px, py, pz, vx, vy, vz in network.ForEachBoid(data, offset, count) do
+						local position, velocity = Vector3.new(ox+px, oy+py, oz+pz), Vector3.new(vx, vy, vz)
+						if accept(id, position, velocity, snapshotTime) then
+							table.insert(received, {boidId=id, position=position, velocity=velocity, snapshotTime=snapshotTime})
+						end
+					end
+				end
+			end,
 		})
 		local data = packet(7)
 		intake.Consume(data, 10)
@@ -71,7 +80,13 @@ return function(t: UnitTest.Context): ()
 		local intake = intakeModule.New({
 			IsServerBoid = function(): boolean return true end,
 			IsDeletionPending = function(): boolean return false end,
-			SetReconciliationTargets = function(rows: {Correction}): () calls += #rows end,
+			SetReconciliationTargets = function(data: buffer, snapshotTime: number, accept: (number, Vector3, Vector3, number) -> boolean): ()
+				for offset, _ox, _oy, _oz, count in network.ForEachCellHeader(data) do
+					for id in network.ForEachBoid(data, offset, count) do
+						if accept(id, Vector3.zero, Vector3.zero, snapshotTime) then calls += 1 end
+					end
+				end
+			end,
 		})
 		intake.Consume(network.ConvertSimulationSnapshotToPackets({cell})[1], 1)
 		t.expect.equal(calls, 1)
@@ -83,7 +98,13 @@ return function(t: UnitTest.Context): ()
 		local intake = intakeModule.New({
 			IsServerBoid = function(): boolean return isServer end,
 			IsDeletionPending = function(): boolean return false end,
-			SetReconciliationTargets = function(rows: {Correction}): () calls += #rows end,
+			SetReconciliationTargets = function(data: buffer, snapshotTime: number, accept: (number, Vector3, Vector3, number) -> boolean): ()
+				for offset, _ox, _oy, _oz, count in network.ForEachCellHeader(data) do
+					for id in network.ForEachBoid(data, offset, count) do
+						if accept(id, Vector3.zero, Vector3.zero, snapshotTime) then calls += 1 end
+					end
+				end
+			end,
 		})
 		intake.Consume(packet(0), 1)
 		intake.Consume(packet(65535), 1)

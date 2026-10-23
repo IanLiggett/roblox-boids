@@ -32,6 +32,7 @@ local BoidStorage = require(BoidsReplicated.BoidStorage)
 local LODConfig = require(BoidsReplicated.LODConfig)
 local SimulationReplication = require(BoidsReplicated.SimulationReplication)
 local NetworkResults = require(BoidsReplicated.NetworkResults)
+local PacketCodec = require(BoidsReplicated.NetworkResults.PacketCodec)
 local DebugPresentation = require(BoidsReplicated.DebugPresentation)
 
 local Schedulers = require(script.Scheduler)
@@ -624,16 +625,27 @@ end
 
 -- Server snapshots feed this client-only target. The Actor worker blends it
 -- into normal steering; storage is never snapped or overwritten from network.
-function Boids.SetReconciliationTargets(targets: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number}}): ()
-	if not RunService:IsClient() or #targets == 0 then return end
+function Boids.SetReconciliationTargets(packet: buffer, snapshotTime: number, accept: (number, Vector3, Vector3, number) -> boolean): ()
+	if not RunService:IsClient() then return end
 	if RuntimeMetrics.State.mode == "detailed" then
 		RuntimeMetrics.Add(RuntimeMetrics.State, "correctionMessages", #ActorsInitializer.actors)
 	end
 	local liveTargets: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number}} = {}
-	for _, target in targets do
-		local lifetime = boidLifetimes[target.boidId]
-		if lifetime and not pendingDeletionIds[target.boidId] then
-			table.insert(liveTargets, {boidId=target.boidId, position=target.position, velocity=target.velocity, snapshotTime=target.snapshotTime, lifetime=lifetime})
+	for offset, ox, oy, oz, count in PacketCodec.ForEachCellHeader(packet) do
+		for boidId, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, count) do
+			local position = Vector3.new(ox + px, oy + py, oz + pz)
+			local velocity = Vector3.new(vx, vy, vz)
+			if not accept(boidId, position, velocity, snapshotTime) then continue end
+			local lifetime = boidLifetimes[boidId]
+			if lifetime and not pendingDeletionIds[boidId] then
+				table.insert(liveTargets, {
+					boidId = boidId,
+					position = position,
+					velocity = velocity,
+					snapshotTime = snapshotTime,
+					lifetime = lifetime,
+				})
+			end
 		end
 	end
 	for _, actor: ActorState in ActorsInitializer.actors do
@@ -642,7 +654,9 @@ function Boids.SetReconciliationTargets(targets: {{boidId: number, position: Vec
 end
 
 function Boids.SetReconciliationTarget(boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number): ()
-	Boids.SetReconciliationTargets({ { boidId = boidId, position = position, velocity = velocity, snapshotTime = snapshotTime } })
+	local cell = PacketCodec.NewCellSnapshot(1, Vector3.zero)
+	PacketCodec.AppendBoid(cell, boidId, position, velocity)
+	Boids.SetReconciliationTargets(PacketCodec.ConvertSimulationSnapshotToPackets({cell})[1], snapshotTime, function(): boolean return true end)
 end
 
 function Boids.GetRuntimeSummary(): SharedTypes.RuntimeSummary
