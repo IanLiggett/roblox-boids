@@ -17,10 +17,8 @@ used, so buffer/table payloads are not deep-copied before rendering.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local Player = Players.LocalPlayer
 local Camera: Camera = workspace.CurrentCamera :: Camera
 
 -- The type anchor remains in the edit-time hierarchy; bootstrap relocates the same package.
@@ -29,7 +27,6 @@ local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: In
 
 local SharedTypes = require(BoidsReplicated.SharedTypes)
 local Quantization = require(BoidsReplicated.Quantization)
-local BoidStorage = require(BoidsReplicated.BoidStorage)
 local PacketCodec = require(BoidsReplicated.NetworkResults.PacketCodec)
 local LODConfig = require(BoidsReplicated.LODConfig)
 local BoidCollisionConfig = require(BoidsReplicated.BoidCollisionConfig)
@@ -45,9 +42,6 @@ local onViewingCamera: ((CFrame, number) -> ())? = nil
 type BoidModel = SharedTypes.BoidModel
 type BoidModelName = SharedTypes.BoidModelName
 type NetworkBoidsBatch = SharedTypes.NetworkBoidsBatch
-
-local readQuantizedPositionU8 = Quantization.ReadQuantizedPositionU8
-local readQuantizedVelocityU8 = Quantization.ReadQuantizedVelocityU8
 
 local BoidFolder: Folder
 local BoidRoot: Part
@@ -84,7 +78,6 @@ local renderTransforms: {CFrame} = {}
 local renderIndexByBoid: {[number]: number} = {}
 local boidIdByRenderIndex: {number} = {}
 
-local boidColors: {[number]: Color3} = {}
 local boidModelById: {[number]: number} = {}
 local groupColors = {}
 local renderedCountByGroup: {[number]: number} = {}
@@ -108,20 +101,16 @@ local function getClientQueryIndex(): BoidQueryIndex.Index?
 	return clientQueryIndex
 end
 
-type RenderState = {
-	latestAt: number,
-	latestPosition: Vector3,
-	latestVelocity: Vector3,
-	renderPosition: Vector3,
-	renderVelocity: Vector3,
-	nextRenderTime: number,
-	lastNetworkInterval: number,
-	facing: Vector3,
-	hasLatest: boolean,
-	hasRender: boolean,
-}
-
-local renderStates: {RenderState} = {}
+local latestAtByIndex: {number} = {}
+local latestPositionByIndex: {Vector3} = {}
+local latestVelocityByIndex: {Vector3} = {}
+local renderPositionByIndex: {Vector3} = {}
+local renderVelocityByIndex: {Vector3} = {}
+local nextRenderTimeByIndex: {number} = {}
+local lastNetworkIntervalByIndex: {number} = {}
+local facingByIndex: {Vector3} = {}
+local hasLatestByIndex: {boolean} = {}
+local hasRenderByIndex: {boolean} = {}
 
 type RenderCell = {
 	key: number,
@@ -303,8 +292,6 @@ local SNAP_DISTANCE: number = 0.05
 local SNAP_DISTANCE_SQUARED: number = SNAP_DISTANCE * SNAP_DISTANCE
 local MAX_EXTRAPOLATION: number = 24
 
-local COLOR_DEBUG_LOSS: number = 5
-
 local clientLOD = LODConfig.GetActive().client
 
 local function exponentialDecayAlpha(dt: number, halfLife: number): number
@@ -316,18 +303,16 @@ local function exponentialDecayAlpha(dt: number, halfLife: number): number
 end
 
 local function initRenderState(index: number, now: number): ()
-	renderStates[index] = {
-		latestAt = 0,
-		latestPosition = Vector3.zero,
-		latestVelocity = Vector3.zero,
-		renderPosition = Vector3.zero,
-		renderVelocity = Vector3.zero,
-		nextRenderTime = now,
-		lastNetworkInterval = 0,
-		facing = Vector3.zero,
-		hasLatest = false,
-		hasRender = false,
-	}
+	latestAtByIndex[index] = 0
+	latestPositionByIndex[index] = Vector3.zero
+	latestVelocityByIndex[index] = Vector3.zero
+	renderPositionByIndex[index] = Vector3.zero
+	renderVelocityByIndex[index] = Vector3.zero
+	nextRenderTimeByIndex[index] = now
+	lastNetworkIntervalByIndex[index] = 0
+	facingByIndex[index] = Vector3.zero
+	hasLatestByIndex[index] = false
+	hasRenderByIndex[index] = false
 end
 
 type CompiledRenderBand = {
@@ -415,32 +400,33 @@ local function getCellRenderInterval(cell: RenderCell): number
 	return compiledRenderBands[selected].interval
 end
 local function renderBoid(index: number, now: number, queryIndex: BoidQueryIndex.Index?): boolean
-	local state: RenderState = renderStates[index]
-	if not state.hasLatest then
+	if not hasLatestByIndex[index] then
 		return false
 	end
 
-	local dt: number = math.min(math.max(0, now - state.nextRenderTime), MAX_EXTRAPOLATION)
-	state.nextRenderTime = now
+	local nextRenderTime: number = nextRenderTimeByIndex[index]
+	local dt: number = math.min(math.max(0, now - nextRenderTime), MAX_EXTRAPOLATION)
+	nextRenderTimeByIndex[index] = now
 
-	local latestPosition: Vector3 = state.latestPosition
-	local latestVelocity: Vector3 = state.latestVelocity
+	local latestPosition: Vector3 = latestPositionByIndex[index]
+	local latestVelocity: Vector3 = latestVelocityByIndex[index]
 	local renderPosition: Vector3
 	local facing: Vector3
-	if state.hasRender then
-		renderPosition = state.renderPosition
-		facing = state.facing
+	if hasRenderByIndex[index] then
+		renderPosition = renderPositionByIndex[index]
+		facing = facingByIndex[index]
 	else
 		renderPosition = latestPosition
 		facing = latestVelocity
 	end
 
-	local snapshotAge: number = math.clamp(now - state.latestAt, 0, MAX_EXTRAPOLATION)
+	local snapshotAge: number = math.clamp(now - latestAtByIndex[index], 0, MAX_EXTRAPOLATION)
 	local predictedPosition: Vector3 = latestPosition + latestVelocity * snapshotAge
 	local previousRenderPosition: Vector3 = renderPosition
 
 	local visualError: Vector3 = previousRenderPosition - predictedPosition
-	local correctionHalfLife: number = if state.lastNetworkInterval > 0 then math.clamp(state.lastNetworkInterval * NETWORK_INTERVAL_CORRECTION_RATIO, POSITION_CORRECTION_HALF_LIFE, MAX_POSITION_CORRECTION_HALF_LIFE) else POSITION_CORRECTION_HALF_LIFE
+	local lastNetworkInterval: number = lastNetworkIntervalByIndex[index]
+	local correctionHalfLife: number = if lastNetworkInterval > 0 then math.clamp(lastNetworkInterval * NETWORK_INTERVAL_CORRECTION_RATIO, POSITION_CORRECTION_HALF_LIFE, MAX_POSITION_CORRECTION_HALF_LIFE) else POSITION_CORRECTION_HALF_LIFE
 	local keepError: number = exponentialDecayAlpha(dt, correctionHalfLife)
 	visualError *= keepError
 	if visualError:Dot(visualError) <= SNAP_DISTANCE_SQUARED then
@@ -459,10 +445,11 @@ local function renderBoid(index: number, now: number, queryIndex: BoidQueryIndex
 	local renderVelocity: Vector3 = facing * desiredSpeed
 	renderPosition = previousRenderPosition + renderVelocity * dt
 
-	state.renderPosition = renderPosition
-	state.renderVelocity = renderVelocity
-	state.facing = facing
-	state.hasRender = true
+	renderPositionByIndex[index] = renderPosition
+	renderVelocityByIndex[index] = renderVelocity
+	facingByIndex[index] = facing
+	hasRenderByIndex[index] = true
+
 	if queryIndex then
 		local boidId = boidIdByRenderIndex[index]
 		local model = boidId and boidModelById[boidId]
@@ -610,18 +597,19 @@ local function pushSnapshot(boidId: number, serverTime: number, position: Vector
 		return
 	end
 
-	local state: RenderState = renderStates[index]
-	if state.hasLatest then
-		if serverTime <= state.latestAt then
+	local latestTime: number = latestAtByIndex[index]
+	if hasLatestByIndex[index] then
+		if serverTime <= latestTime then
 			return
 		end
-		state.lastNetworkInterval = serverTime - state.latestAt
+
+		lastNetworkIntervalByIndex[index] = serverTime - latestTime
 	end
 
-	state.latestAt = serverTime
-	state.latestPosition = position
-	state.latestVelocity = velocity
-	state.hasLatest = true
+	latestAtByIndex[index] = serverTime
+	latestPositionByIndex[index] = position
+	latestVelocityByIndex[index] = velocity
+	hasLatestByIndex[index] = true
 end
 
 local lastSnapshotTimeByBoid:{[number]: number} = {}
@@ -634,7 +622,7 @@ local function acceptSnapshotRow(boidId: number, completionTime: number, px: num
 		return
 	end
 	lastSnapshotTimeByBoid[boidId] = completionTime
-	local position: Vector3 = Vector3.new(px, py, pz)
+	local position = Vector3.new(px, py, pz)
 	assignBoidToRenderCell(boidId, position)
 	pushSnapshot(boidId, completionTime, position, Vector3.new(vx, vy, vz))
 end
@@ -723,7 +711,16 @@ local function unregisterBoid(boidId: number): ()
 	renderMotors[index] = lastMotor
 	renderTransforms[index] = renderTransforms[lastIndex]
 	boidIdByRenderIndex[index] = lastBoidId
-	renderStates[index] = renderStates[lastIndex]
+	latestAtByIndex[index] = latestAtByIndex[lastIndex]
+	latestPositionByIndex[index] = latestPositionByIndex[lastIndex]
+	latestVelocityByIndex[index] = latestVelocityByIndex[lastIndex]
+	renderPositionByIndex[index] = renderPositionByIndex[lastIndex]
+	renderVelocityByIndex[index] = renderVelocityByIndex[lastIndex]
+	nextRenderTimeByIndex[index] = nextRenderTimeByIndex[lastIndex]
+	lastNetworkIntervalByIndex[index] = lastNetworkIntervalByIndex[lastIndex]
+	facingByIndex[index] = facingByIndex[lastIndex]
+	hasLatestByIndex[index] = hasLatestByIndex[lastIndex]
+	hasRenderByIndex[index] = hasRenderByIndex[lastIndex]
 
 	if lastBoidId then
 		renderIndexByBoid[lastBoidId] = index
@@ -732,13 +729,21 @@ local function unregisterBoid(boidId: number): ()
 
 	renderMotors[lastIndex] = nil
 	renderTransforms[lastIndex] = nil
-	renderStates[lastIndex] = nil
+	table.remove(latestAtByIndex, lastIndex)
+	table.remove(latestPositionByIndex, lastIndex)
+	table.remove(latestVelocityByIndex, lastIndex)
+	table.remove(renderPositionByIndex, lastIndex)
+	table.remove(renderVelocityByIndex, lastIndex)
+	table.remove(nextRenderTimeByIndex, lastIndex)
+	table.remove(lastNetworkIntervalByIndex, lastIndex)
+	table.remove(facingByIndex, lastIndex)
+	table.remove(hasLatestByIndex, lastIndex)
+	table.remove(hasRenderByIndex, lastIndex)
 	boidIdByRenderIndex[lastIndex] = nil
 	removedMotor:Destroy()
 
 	renderIndexByBoid[boidId] = nil
 	lastSnapshotTimeByBoid[boidId] = nil
-	boidColors[boidId] = nil
 	boidModelById[boidId] = nil
 	if clientQueryIndex then
 		clientQueryIndex:Remove(boidId)
@@ -810,7 +815,7 @@ local function receiveNewBoidBatch(networkBoidsBatch: NetworkBoidsBatch): ()
 	local now: number = workspace:GetServerTimeNow()
 
 	local newBoidModel:(Model | BasePart)
-	local boidId:number, boid:Model | BasePart
+	local boidId:number
 	for i = 0, boidCount - 1 do
 		boidId = buffer.readu16(boidIds, i * 2)
 		local lifetime = if networkBoidsBatch.lifetimes then networkBoidsBatch.lifetimes[boidId] else nil
@@ -832,7 +837,6 @@ local function receiveNewBoidBatch(networkBoidsBatch: NetworkBoidsBatch): ()
 
 		groupTracker[boidId] = newBoidModel
 		groupIdByBoid[boidId] = groupId
-		boidColors[boidId] = groupColors[groupId]
 		boidModelById[boidId] = model
 
 		registerBoid(boidId, newBoidModel, now)
@@ -919,15 +923,14 @@ function BoidsRenderer.GetRenderedBoidState(boidId: number): RenderedBoidState?
 	if not index or not groupId then
 		return nil
 	end
-	local state: RenderState = renderStates[index]
-	local isRendered = state.hasRender
+	local isRendered = hasRenderByIndex[index]
 	return {
 		boidId = boidId,
 		groupId = groupId,
 		cframe = renderTransforms[index],
-		velocity = if isRendered then state.renderVelocity else Vector3.zero,
+		velocity = if isRendered then renderVelocityByIndex[index] else Vector3.zero,
 		isRendered = isRendered,
-		renderedAt = if isRendered then state.nextRenderTime else nil,
+		renderedAt = if isRendered then nextRenderTimeByIndex[index] else nil,
 		snapshotAt = lastSnapshotTimeByBoid[boidId],
 	}
 end
@@ -952,8 +955,7 @@ function BoidsRenderer.GetRenderedGroupBounds(groupId: number): RenderedGroupBou
 		if not index then
 			continue
 		end
-		local state: RenderState = renderStates[index]
-		if not state.hasRender then
+		if not hasRenderByIndex[index] then
 			continue
 		end
 		local position = renderTransforms[index].Position
@@ -963,7 +965,7 @@ function BoidsRenderer.GetRenderedGroupBounds(groupId: number): RenderedGroupBou
 		maximum = maximum:Max(position + extent)
 		sum += position
 		count += 1
-		oldestRenderedAt = math.min(oldestRenderedAt, state.nextRenderTime)
+		oldestRenderedAt = math.min(oldestRenderedAt, nextRenderTimeByIndex[index])
 	end
 	if count == 0 then
 		return nil
@@ -990,7 +992,7 @@ function BoidsRenderer.PickRenderedBoid(origin: Vector3, direction: Vector3, gro
 	local bestId: number? = nil
 	for index, boidId in boidIdByRenderIndex do
 		if groupId ~= nil and groupIdByBoid[boidId] ~= groupId then continue end
-		if not renderStates[index].hasRender then continue end
+		if not hasRenderByIndex[index] then continue end
 		local position = renderTransforms[index].Position
 		local offset = position - origin
 		local along = offset:Dot(unit)
@@ -999,7 +1001,10 @@ function BoidsRenderer.PickRenderedBoid(origin: Vector3, direction: Vector3, gro
 		local perpendicularSq = math.max(0, offset:Dot(offset) - along * along)
 		if perpendicularSq > radius * radius then continue end
 		local hitDistance = math.max(0, along - math.sqrt(radius * radius - perpendicularSq))
-		if hitDistance < bestDistance then bestDistance = hitDistance bestId = boidId end
+		if hitDistance < bestDistance then
+			bestDistance = hitDistance
+			bestId = boidId
+		end
 	end
 	if bestId == nil then return nil end
 	return { boidId = bestId, groupId = groupIdByBoid[bestId], position = renderTransforms[renderIndexByBoid[bestId]].Position, distance = bestDistance }
