@@ -29,3 +29,9 @@ Boids share 65,536 IDs (`0–65535`) per process. Server creation takes the lowe
 `Boids.NewBoid` accepts a `BoidModel` ID; the built-in IDs are in `SharedTypes.BoidModels`. See the [coordinator API declarations](../src/BoidsSystem/BoidsReplicated/Boids/init.luau) and [shared types](../src/BoidsSystem/BoidsReplicated/SharedTypes.luau) for signatures, optional arguments, and result types. Query boid geometry through the package's server query API, [BoidQueryIndexServer](../src/BoidsSystem/Server/BoidQueryIndexServer.luau), rather than maintaining a second index in the host game.
 
 DO NOT enable CanQuery on boids if you can avoid it, when dealing with particularly large swarms. They will slow down raycasts by orders of magnitude. I encourage you to test it yourself if you feel it will work find for your situation.
+
+## Network accuracy
+
+`LODConfig` network presets select position and velocity error tolerances by observer distance. Updates are sent when either tolerance is exceeded against that recipient's last-sent quantized trajectory; quiet predictable boids have no periodic refresh. LOW starts at 4 to 16 studs and 2 to 8 studs/second, MEDIUM at 2 to 8 and 1 to 4, HIGH at 1 to 4 and 1 to 2. Both presentation modes use this policy. Server simulation cadence and transport latency still limit correction timing.
+
+`BenchmarkNear30k` supplies a dense 30,000-boid validation population. Validation can force nearest LODs in the live test runtime to exercise the close-view workload even after the flock spreads; see the implementation and measurement record in [error network LOD plan](error-network-lod-plan.md).

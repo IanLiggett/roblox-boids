@@ -38,9 +38,6 @@ local function newCell(group:Group, origin:Vector3, cellId:number?):Cell
 
 		pages = BoidStorage.NewPagedBuffer(),
 
-		networkTick = 1,
-		networkInterval = 4,
-
 	} :: Cell
 	DebugPresentation.CellCreated(group.lifetime, cellId, origin)
 	group.activeCells[cellId] = cell

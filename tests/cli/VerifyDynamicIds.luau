@@ -37,7 +37,7 @@ local runAllocatorCases = load(root .. "tests/UnitTest/Cases/IdAllocator_Test.lu
 }) :: (typeof(t)) -> ()
 runAllocatorCases(t)
 
--- Load the unchanged production client intake against deterministic services.
+-- Load production client replication intake against deterministic services.
 type Callback = (...unknown) -> ()
 type Connection = {Disconnect: () -> ()}
 type Event = {Connect: (Event, Callback) -> Connection, Fire: (Event, ...unknown) -> ()}
@@ -190,7 +190,7 @@ t.test("retiring groups stop reporting server ownership before a yielded commit 
 	t.expect.falsy(f.boids.HasBoid(0))
 end)
 
-local function fixture()
+local function fixture(renderPacketsDirectly: boolean?)
 	local heartbeat, incoming = event(), event()
 	local pool = allocator.New()
 	local live: {[number]: "local" | "server"} = {}
@@ -227,16 +227,20 @@ local function fixture()
 		Consume = function() end,
 	} end}
 	local runService = {IsClient = function() return true end, IsServer = function() return false end, Heartbeat = heartbeat}
-	local remotes = {SimulationState = {OnClientEvent = incoming}, RequestSimulationState = {FireServer = function() end}, BoidJobUpdate = {OnClientEvent = event()}}
-	local shared = {Remotes = remotes, SharedTypes = {}, NetworkResults = {}, RuntimeTypes = {}}
+	local jobUpdates = event()
+	local directPacketCount = 0
+	local remotes = {SimulationState = {OnClientEvent = incoming}, RequestSimulationState = {FireServer = function() end}, BoidJobUpdate = {OnClientEvent = jobUpdates}}
+	local shared = {Remotes = remotes, SharedTypes = {}, NetworkResults = {}, RuntimeTypes = {}, ClientRendererBridge = {
+		ConsumeNetworkPacket = function(_packet: buffer, _sourceTime: number): () directPacketCount += 1 end,
+	}}
 	local script = {Parent = shared, CorrectionIntake = correction, Replay = {}, Bootstrap = {}}
 	local workspace = {DescendantAdded = event()}
-	type ReplicationRuntime = {StartClient: (typeof(boids)) -> ()}
+	type ReplicationRuntime = {StartClient: (typeof(boids), boolean?) -> ()}
 	local replication: ReplicationRuntime = load(base .. "SimulationReplication/init.luau", {
 		script = script, require = identity, Vector3 = roblox.Vector3, workspace = workspace,
 		game = {GetService = function(_, name) return if name == "RunService" then runService else {} end},
 	}) :: ReplicationRuntime
-	replication.StartClient(boids)
+	replication.StartClient(boids, renderPacketsDirectly)
 	local function spawn(group: number, ids: {number}): ()
 		local data = buffer.create(#ids * 37)
 		for row, id in ids do buffer.writeu16(data, (row - 1) * 37, id) end
@@ -253,6 +257,7 @@ local function fixture()
 	end
 	return {live = live, holds = holds, incoming = incoming, spawn = spawn, settle = settle,
 		heartbeat = heartbeat, localSpawn = localSpawn, retiring = groupRetiring,
+		jobUpdates = jobUpdates, directPackets = function() return directPacketCount end,
 		deletions = function() return deletions end, pendingDeletion = pendingDeletion}
 end
 
@@ -288,6 +293,16 @@ t.test("server deletion cancels takeover without leaking reservations", function
 	f.heartbeat:Fire()
 	t.expect.equal(f.live[65535], nil)
 	t.expect.equal(f.localSpawn(), 65535)
+end)
+
+t.test("direct-render mode routes unreliable packets to the renderer", function()
+	local f = fixture(true)
+	local packet = buffer.create(1)
+	f.jobUpdates:Fire(packet, 12)
+	t.expect.equal(f.directPackets(), 1)
+	f.incoming:Fire("Group", 0, 0)
+	f.incoming:Fire("DeleteBoids", {7}, 11)
+	t.expect.equal(f.directPackets(), 1)
 end)
 
 t.test("queued group replacement reserves rows and handles delete/reuse order", function()
@@ -366,7 +381,12 @@ end
 
 -- Compile every edited production source without starting a runtime.
 for _, path in {
-	base .. "Boids/init.luau", base .. "RuntimeTypes.luau", base .. "SimulationReplication/CorrectionIntake.luau",
+	base .. "Boids/init.luau", base .. "RuntimeTypes.luau", base .. "RuntimeConfig.luau",
+	base .. "ClientPresentationConfig.luau", base .. "ClientRendererBridge.luau", base .. "SimulationReplication/init.luau",
+	base .. "SimulationReplication/CorrectionIntake.luau",
+	root .. "src/BoidsSystem/BoidsClient/ClientSimulation/init.luau",
+	root .. "src/BoidsSystem/BoidsClient/BoidsRenderer/init.luau",
+	root .. "src/BoidsSystem/Server/Testing/ScenarioTestInitializer.luau",
 	root .. "src/BoidsSystem/BoidsClient/Scenarios/Observation/init.luau",
 	root .. "src/BoidsSystem/BoidsClient/Scenarios/Observation/Inspector/init.luau",
 	root .. "src/BoidsSystem/Server/Scenarios/Observation.luau",

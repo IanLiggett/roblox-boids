@@ -2,13 +2,14 @@
 
 --[[ BoidsRenderer
 Description:
-	Client-side boid renderer. Receives spawn batches and unreliable simulation
-	snapshots, instantiates boid models, smooths/extrapolates render state, and
+	Client-side boid renderer. Receives spawn batches and unreliable network or
+	local simulation snapshots, instantiates boid models, smooths render state, and
 	applies visible boid CFrames through per-boid Motor6D transforms.
 
 Runtime API:
 	Start(): (): creates the root and installs selected callbacks once
 	receiveNewBoidBatch(networkBoidsBatch: NetworkBoidsBatch): creates render models
+	consumeNetworkPacket(packet: buffer, sourceTime: number): accepts server snapshot packets
 	receiveDeleteBoidBatch(packet: buffer): removes rendered boids
 	receiveDeleteGroup(groupId: number): removes rendered group state
 
@@ -34,6 +35,7 @@ local BoidQueryIndex = require(BoidsReplicated.BoidQueryIndex)
 local QueryIndexConfig = require(BoidsReplicated.QueryIndexConfig)
 
 local Measurements = require(script.Measurements)
+local Visibility = require(script.Visibility)
 local BoidsRenderer = {}
 local isStarted = false
 local onViewingCamera: ((CFrame, number) -> ())? = nil
@@ -69,11 +71,14 @@ local BoidModelsStorage = script.Parent.BoidModels
 local boidsByGroup = {}
 local groupFolders:{[number]: Folder} = {}
 local groupIdByBoid: {[number]: number} = {}
+local replicatedGroupById: {[number]: boolean} = {}
 local spawnLifetimes: {[number]: number} = {}
 local retiredLifetimes: {[number]: number} = {}
 
 local renderMotors: {Motor6D} = {}
 local renderTransforms: {CFrame} = {}
+local renderParts: {BasePart} = {}
+local opacityByIndex: {number} = {}
 
 local renderIndexByBoid: {[number]: number} = {}
 local boidIdByRenderIndex: {number} = {}
@@ -107,7 +112,8 @@ local latestVelocityByIndex: {Vector3} = {}
 local renderPositionByIndex: {Vector3} = {}
 local renderVelocityByIndex: {Vector3} = {}
 local nextRenderTimeByIndex: {number} = {}
-local lastNetworkIntervalByIndex: {number} = {}
+local motionResumeAtByIndex: {number} = {}
+local predictionSuspendedForByIndex: {number} = {}
 local facingByIndex: {Vector3} = {}
 local hasLatestByIndex: {boolean} = {}
 local hasRenderByIndex: {boolean} = {}
@@ -115,6 +121,13 @@ local hasRenderByIndex: {boolean} = {}
 type RenderCell = {
 	key: number,
 	origin: Vector3,
+	center: Vector3,
+	networkCenter: Vector3,
+	spatialKey: number,
+	isReplicated: boolean,
+	isInView: boolean,
+	motionResumedAt: number?,
+	visibility: Visibility.State,
 	renderIndices: {number},
 	slotByRenderIndex: {[number]: number},
 	nextDueTime: number,
@@ -130,6 +143,11 @@ type RenderCellKeyByBoid = {[number]: number}
 type RenderCellSet = {[number]: boolean}
 
 local renderCellsByKey: RenderCellByKey = {}
+-- Spatial maps separate ownership without enlarging Cantor keys or duplicating
+-- per-boid lists. Cell handles remain stable through visibility transitions.
+local replicatedSpatialCells: RenderCellByKey = {}
+local localSpatialCells: RenderCellByKey = {}
+local nextCellKey = 0
 local activeRenderCells: {RenderCell} = {}
 local activeRenderCellIndexByKey: RenderCellIndexByKey = {}
 local renderCellKeyByBoid: RenderCellKeyByBoid = {}
@@ -139,9 +157,13 @@ local nextAgingRenderCellIndex: number = 1
 -- Renderer cells intentionally subdivide the unchanged simulation/query cells.
 local RENDER_CELL_SIZE: number = 32
 local CELL_HALF_SIZE: number = RENDER_CELL_SIZE * 0.5
+local NETWORK_HALF_SIZE = Quantization.CELL_SIZE * 0.5
+-- Instance transparency changes can stall the engine far beyond their Lua cost.
+-- Keep them bounded separately from cheaper cached-pose/motion work.
+local MAX_TRANSPARENCY_WRITES = 2048
 local CELL_BOUND_RADIUS: number = RENDER_CELL_SIZE * math.sqrt(3) * 0.5
 local AGING_THRESHOLD: number = 0.5
--- Aging guarantees eventual distant-cell progress without consuming the near-first budget.
+-- Aging guarantees eligible-cell progress without consuming the near-first budget.
 local AGING_BUDGET_RATIO: number = 0.1
 
 local function removeAgingRenderCell(cell: RenderCell): ()
@@ -184,6 +206,8 @@ local function removeActiveRenderCell(cell: RenderCell): ()
 	activeRenderCells[lastIndex] = nil
 	activeRenderCellIndexByKey[cell.key] = nil
 	renderCellsByKey[cell.key] = nil
+	local spatialCells = if cell.isReplicated then replicatedSpatialCells else localSpatialCells
+	spatialCells[cell.spatialKey] = nil
 end
 
 local function removeBoidFromRenderCell(boidId: number): ()
@@ -210,6 +234,8 @@ local function removeBoidFromRenderCell(boidId: number): ()
 	cell.slotByRenderIndex[movedRenderIndex] = slot
 	cell.renderIndices[lastSlot] = nil
 	cell.slotByRenderIndex[renderIndex] = nil
+	-- A swap may move an unvisited member behind an in-progress pass cursor.
+	cell.resumeSlot = math.min(cell.resumeSlot, slot)
 
 	if #cell.renderIndices == 0 then
 		removeActiveRenderCell(cell)
@@ -248,49 +274,66 @@ local function assignBoidToRenderCell(boidId: number, position: Vector3): ()
 		(position.Y // RENDER_CELL_SIZE) * RENDER_CELL_SIZE,
 		(position.Z // RENDER_CELL_SIZE) * RENDER_CELL_SIZE
 	)
-	local cellKey: number = Quantization.GetNumericalKey(origin.X, origin.Y, origin.Z)
-	if renderCellKeyByBoid[boidId] == cellKey then
-		return
+	local spatialKey: number = Quantization.GetNumericalKey(origin.X, origin.Y, origin.Z)
+	local isReplicated = replicatedGroupById[groupIdByBoid[boidId]]
+	local spatialCells = if isReplicated then replicatedSpatialCells else localSpatialCells
+	local existing = spatialCells[spatialKey]
+	if existing and renderCellKeyByBoid[boidId] == existing.key then return end
+	local previousKey = renderCellKeyByBoid[boidId]
+	local previousCell = if previousKey then renderCellsByKey[previousKey] else nil
+	if previousCell and not previousCell.motionResumedAt then
+		-- A hidden row can migrate into an already active cell on snapshot intake.
+		-- Keep its suspended interval even though the old cell may be removed.
+		motionResumeAtByIndex[renderIndex] = workspace:GetServerTimeNow()
 	end
-
 	removeBoidFromRenderCell(boidId)
-
-	local existing: RenderCell? = renderCellsByKey[cellKey]
-	local cell: RenderCell = if existing then existing else {
-			key = cellKey,
-			origin = origin,
-			renderIndices = {},
-			slotByRenderIndex = {},
-			nextDueTime = workspace:GetServerTimeNow(),
-			scheduledInterval = 0,
-			resumeSlot = 1,
+	local cell: RenderCell
+	if existing then
+		cell = existing
+	else
+		nextCellKey += 1
+		local networkOrigin: Vector3 = Vector3.new(
+			(origin.X // Quantization.CELL_SIZE) * Quantization.CELL_SIZE,
+			(origin.Y // Quantization.CELL_SIZE) * Quantization.CELL_SIZE,
+			(origin.Z // Quantization.CELL_SIZE) * Quantization.CELL_SIZE)
+		local created: RenderCell = {
+			key = nextCellKey, spatialKey = spatialKey, origin = origin,
+			center = origin + Vector3.one * CELL_HALF_SIZE,
+			networkCenter = networkOrigin + Vector3.one * NETWORK_HALF_SIZE,
+			isReplicated = isReplicated, isInView = false, visibility = Visibility.New(),
+			renderIndices = {}, slotByRenderIndex = {},
+			nextDueTime = workspace:GetServerTimeNow(), scheduledInterval = 0, resumeSlot = 1,
 		}
-	if not existing then
-		renderCellsByKey[cellKey] = cell
+		cell = created
+		-- A visible migrant already has a usable pose. Crossing a cell boundary
+		-- alone must not hide it.
+		cell.visibility.isEligible = opacityByIndex[renderIndex] > 0
+		renderCellsByKey[cell.key] = cell
+		spatialCells[spatialKey] = cell
 		activeRenderCells[#activeRenderCells + 1] = cell
-		activeRenderCellIndexByKey[cellKey] = #activeRenderCells
+		activeRenderCellIndexByKey[cell.key] = #activeRenderCells
 	end
+	-- Mixed member opacity (including a visible migrant entering a hidden cell)
+	-- needs one bounded pass before the cell can be treated as uniform again.
+	if opacityByIndex[renderIndex] ~= cell.visibility.appliedOpacity then cell.visibility.appliedOpacity = -1 end
+	cell.nextDueTime = math.min(cell.nextDueTime, workspace:GetServerTimeNow())
 
 	local slot: number = #cell.renderIndices + 1
 	cell.renderIndices[slot] = renderIndex
 	cell.slotByRenderIndex[renderIndex] = slot
-	renderCellKeyByBoid[boidId] = cellKey
+	renderCellKeyByBoid[boidId] = cell.key
 end
 
 
 local U16_SIZE: number = 2
 
--- Smooth authoritative corrections over much of a boid's expected update interval.
--- Extrapolation remains capped below, so a stale snapshot cannot make the render
--- state drift without bound.
+-- Quiet network intervals mean the prediction may still be accurate. Continue
+-- predicting and use a fixed response when an error-triggered correction arrives.
 local POSITION_CORRECTION_HALF_LIFE: number = 0.75
-local NETWORK_INTERVAL_CORRECTION_RATIO: number = 0.75
-local MAX_POSITION_CORRECTION_HALF_LIFE: number = 6
 -- Facing follows the already-smoothed render trajectory, not the new snapshot velocity.
 local ORIENTATION_CORRECTION_HALF_LIFE: number = 0.1 --1
 local SNAP_DISTANCE: number = 0.05
 local SNAP_DISTANCE_SQUARED: number = SNAP_DISTANCE * SNAP_DISTANCE
-local MAX_EXTRAPOLATION: number = 24
 
 local clientLOD = LODConfig.GetActive().client
 
@@ -309,7 +352,8 @@ local function initRenderState(index: number, now: number): ()
 	renderPositionByIndex[index] = Vector3.zero
 	renderVelocityByIndex[index] = Vector3.zero
 	nextRenderTimeByIndex[index] = now
-	lastNetworkIntervalByIndex[index] = 0
+	motionResumeAtByIndex[index] = now
+	predictionSuspendedForByIndex[index] = 0
 	facingByIndex[index] = Vector3.zero
 	hasLatestByIndex[index] = false
 	hasRenderByIndex[index] = false
@@ -331,11 +375,17 @@ type FrameRenderWork = {
 	dirtyTransformCount: number,
 	scheduledCellCount: number,
 	scheduledCells: RenderCellSet,
+	motionUpdates: number,
+	transparencyWrites: number,
+	visibilityBudget: number,
 }
+
+local framePosition: Vector3 = Vector3.zero
+local frameLook: Vector3 = -Vector3.zAxis
+local frameConeCosine = 1
 
 local compiledClientConfig: LODConfig.ClientConfig? = nil
 local compiledRenderBands: {CompiledRenderBand} = {}
-local compiledOffscreenInterval: number = 0
 local compiledPeripheralLodDistanceScale: number = 0
 
 local function refreshCompiledRenderSchedule(clientConfig: LODConfig.ClientConfig): boolean
@@ -351,32 +401,19 @@ local function refreshCompiledRenderSchedule(clientConfig: LODConfig.ClientConfi
 			interval = 1 / band.hertz,
 		}
 	end
-	compiledOffscreenInterval = 1 / clientConfig.offscreenHertz
 	compiledPeripheralLodDistanceScale = clientConfig.peripheralLodDistanceScale
 	return true
 end
 
 local function getCellCenterDistance(cell: RenderCell): number
-	local cellCenter: Vector3 = cell.origin + Vector3.one * CELL_HALF_SIZE
-	return (cellCenter - Camera.CFrame.Position).Magnitude
+	return (cell.center - framePosition).Magnitude
 end
 
 local function getCellRenderInterval(cell: RenderCell): number
-	local cellCenter: Vector3 = cell.origin + Vector3.one * CELL_HALF_SIZE
-	local cameraToCell: Vector3 = cellCenter - Camera.CFrame.Position
-	local centerDistance: number = cameraToCell.Magnitude
-	local lookDirection: Vector3 = Camera.CFrame.LookVector
-	local forwardDot: number = cameraToCell:Dot(lookDirection)
-	local coneCosine: number = math.cos(math.rad(Camera.FieldOfView * 0.5))
-
-	local visible: boolean = centerDistance <= CELL_BOUND_RADIUS
-	if not visible then
-		local viewThreshold: number = centerDistance * coneCosine - CELL_BOUND_RADIUS
-		visible = forwardDot >= viewThreshold
-	end
-	if not visible then
-		return compiledOffscreenInterval
-	end
+	local cameraToCell: Vector3 = cell.center - framePosition
+	local centerDistance = cameraToCell.Magnitude
+	local forwardDot = cameraToCell:Dot(frameLook)
+	local coneCosine = frameConeCosine
 
 	local nearestDistance: number = math.max(0, centerDistance - CELL_BOUND_RADIUS)
 	local forwardCosine: number = if centerDistance > 0 then forwardDot / centerDistance else 1
@@ -399,13 +436,17 @@ local function getCellRenderInterval(cell: RenderCell): number
 	end
 	return compiledRenderBands[selected].interval
 end
-local function renderBoid(index: number, now: number, queryIndex: BoidQueryIndex.Index?): boolean
+local function renderBoid(index: number, now: number, cellResumedAt: number): boolean
 	if not hasLatestByIndex[index] then
 		return false
 	end
 
 	local nextRenderTime: number = nextRenderTimeByIndex[index]
-	local dt: number = math.min(math.max(0, now - nextRenderTime), MAX_EXTRAPOLATION)
+	local resumedAt = math.max(cellResumedAt, motionResumeAtByIndex[index])
+	-- Lazy clock repair runs only for scheduled members, never over hidden lists.
+	-- Snapshot timestamps remain authoritative for intake ordering/observation.
+	predictionSuspendedForByIndex[index] += math.max(0, resumedAt - math.max(nextRenderTime, latestAtByIndex[index]))
+	local dt: number = math.max(0, now - math.max(nextRenderTime, resumedAt))
 	nextRenderTimeByIndex[index] = now
 
 	local latestPosition: Vector3 = latestPositionByIndex[index]
@@ -420,14 +461,12 @@ local function renderBoid(index: number, now: number, queryIndex: BoidQueryIndex
 		facing = latestVelocity
 	end
 
-	local snapshotAge: number = math.clamp(now - latestAtByIndex[index], 0, MAX_EXTRAPOLATION)
+	local snapshotAge: number = math.max(0, now - latestAtByIndex[index] - predictionSuspendedForByIndex[index])
 	local predictedPosition: Vector3 = latestPosition + latestVelocity * snapshotAge
 	local previousRenderPosition: Vector3 = renderPosition
 
 	local visualError: Vector3 = previousRenderPosition - predictedPosition
-	local lastNetworkInterval: number = lastNetworkIntervalByIndex[index]
-	local correctionHalfLife: number = if lastNetworkInterval > 0 then math.clamp(lastNetworkInterval * NETWORK_INTERVAL_CORRECTION_RATIO, POSITION_CORRECTION_HALF_LIFE, MAX_POSITION_CORRECTION_HALF_LIFE) else POSITION_CORRECTION_HALF_LIFE
-	local keepError: number = exponentialDecayAlpha(dt, correctionHalfLife)
+	local keepError: number = exponentialDecayAlpha(dt, POSITION_CORRECTION_HALF_LIFE)
 	visualError *= keepError
 	if visualError:Dot(visualError) <= SNAP_DISTANCE_SQUARED then
 		visualError = Vector3.zero
@@ -450,13 +489,6 @@ local function renderBoid(index: number, now: number, queryIndex: BoidQueryIndex
 	facingByIndex[index] = facing
 	hasRenderByIndex[index] = true
 
-	if queryIndex then
-		local boidId = boidIdByRenderIndex[index]
-		local model = boidId and boidModelById[boidId]
-		if model then
-			queryIndex:Update(boidId, renderPosition, BoidCollisionConfig.GetRadius(model))
-		end
-	end
 	renderTransforms[index] = CFrame.lookAt(renderPosition, renderPosition + facing)
 	return true
 end
@@ -464,11 +496,12 @@ end
 local dirtyRenderIndices: {number} = {}
 
 local function completeRenderCell(cell: RenderCell, now: number): ()
+	Visibility.CompletePass(cell.visibility)
 	cell.resumeSlot = 1
 	cell.deferredSince = nil
 	removeAgingRenderCell(cell)
 	cell.scheduledInterval = getCellRenderInterval(cell)
-	cell.nextDueTime = now + cell.scheduledInterval
+	cell.nextDueTime = if Visibility.NeedsPass(cell.visibility) then now + cell.scheduledInterval else math.huge
 end
 
 local function renderCell(cell: RenderCell, now: number, queryIndex: BoidQueryIndex.Index?, maxBoids: number, work: FrameRenderWork): ()
@@ -479,19 +512,43 @@ local function renderCell(cell: RenderCell, now: number, queryIndex: BoidQueryIn
 
 	local renderedInCell: number = 0
 	local slot: number = cell.resumeSlot
-	while slot <= #cell.renderIndices and work.attempted < work.budget and renderedInCell < maxBoids do
-		local renderIndex: number = cell.renderIndices[slot]
+	local members = cell.renderIndices
+	local memberCount = #members
+	local visibilityBudget = work.visibilityBudget
+	local boidBudget = work.budget
+	local visibility = cell.visibility
+	if slot == 1 then Visibility.BeginPass(visibility) end
+	local opacity = visibility.passOpacity
+	while slot <= memberCount and work.attempted < boidBudget and renderedInCell < maxBoids do
+		local renderIndex: number = members[slot]
+		local expectedOpacity = if hasRenderByIndex[renderIndex] or (visibility.isEligible and hasLatestByIndex[renderIndex]) then opacity else 0
+		if opacityByIndex[renderIndex] ~= expectedOpacity and work.transparencyWrites >= visibilityBudget then break end
 		cell.resumeSlot = slot + 1
 		work.attempted += 1
 		renderedInCell += 1
-		if renderBoid(renderIndex, now, queryIndex) then
+		if visibility.isEligible and renderBoid(renderIndex, now, cell.motionResumedAt :: number) then
+			work.motionUpdates += 1
 			work.dirtyTransformCount += 1
 			dirtyRenderIndices[work.dirtyTransformCount] = renderIndex
+		end
+		local visibleOpacity = if hasRenderByIndex[renderIndex] then opacity else 0
+		if opacityByIndex[renderIndex] ~= visibleOpacity then
+			opacityByIndex[renderIndex] = visibleOpacity
+			renderParts[renderIndex].LocalTransparencyModifier = 1 - visibleOpacity
+			work.transparencyWrites += 1
+		end
+		if queryIndex then
+			local boidId = boidIdByRenderIndex[renderIndex]
+			if visibleOpacity > 0 then
+				queryIndex:Update(boidId, renderPositionByIndex[renderIndex], BoidCollisionConfig.GetRadius(boidModelById[boidId]))
+			else
+				queryIndex:Remove(boidId)
+			end
 		end
 		slot += 1
 	end
 
-	if cell.resumeSlot > #cell.renderIndices then
+	if cell.resumeSlot > memberCount then
 		completeRenderCell(cell, now)
 	elseif not cell.deferredSince then
 		cell.deferredSince = now
@@ -507,7 +564,12 @@ local function onRenderStepped(frameDt: number): ()
 	local measurementsEnabled = Measurements.IsEnabled()
 	local measurementStart: number = if measurementsEnabled then os.clock() else 0
 	debug.profilebegin("BoidsRendererMotor6D")
-	clientLOD = LODConfig.GetActive().client
+	local activeConfig = LODConfig.GetActive()
+	clientLOD = activeConfig.client
+	local view = Visibility.CreateView(Camera.CFrame, Camera.FieldOfView, Camera.ViewportSize)
+	framePosition = view.position
+	frameLook = view.cframe.LookVector
+	frameConeCosine = math.cos(math.rad(Camera.FieldOfView * 0.5))
 	local now: number = workspace:GetServerTimeNow()
 	if onViewingCamera then onViewingCamera(Camera.CFrame, now) end
 	local scheduleChanged: boolean = refreshCompiledRenderSchedule(clientLOD)
@@ -525,12 +587,48 @@ local function onRenderStepped(frameDt: number): ()
 		dirtyTransformCount = 0,
 		scheduledCellCount = 0,
 		scheduledCells = {},
+		motionUpdates = 0,
+		transparencyWrites = 0,
+		visibilityBudget = math.min(clientLOD.maxRenderBoidsPerFrame, MAX_TRANSPARENCY_WRITES),
 	}
 
 	-- Due cells enter the aging queue even if the cap prevents their first boid.
 	-- That makes the 0.5 second starvation bound apply to distant cells as well as
 	-- dense cells that are being resumed across frames.
+	local hiddenCells, transitionCells = 0, 0
 	for _, cell: RenderCell in activeRenderCells do
+		cell.isInView = Visibility.IsInView(cell.center, CELL_BOUND_RADIUS, view)
+		-- Rotation only suspends scheduling. Preserve opacity and the
+		-- partial-pass cursor; no member work is needed to leave or reenter view.
+		if not cell.isInView then
+			cell.motionResumedAt = nil
+			hiddenCells += 1
+			cell.deferredSince = nil
+			removeAgingRenderCell(cell)
+			continue
+		end
+		local opacity = 1
+		if cell.isReplicated then
+			opacity = Visibility.DistanceOpacity((cell.networkCenter - view.position).Magnitude, activeConfig.network.farDistance)
+		end
+		if Visibility.SetTarget(cell.visibility, opacity) then
+			cell.resumeSlot = 1
+			cell.nextDueTime = now
+			cell.deferredSince = nil
+			removeAgingRenderCell(cell)
+		end
+		if cell.visibility.isEligible then
+			if not cell.motionResumedAt then cell.motionResumedAt = now end
+		else
+			cell.motionResumedAt = nil
+		end
+		if not Visibility.NeedsPass(cell.visibility) then
+			hiddenCells += 1
+			cell.deferredSince = nil
+			removeAgingRenderCell(cell)
+			continue
+		end
+		if cell.visibility.appliedOpacity ~= cell.visibility.targetOpacity then transitionCells += 1 end
 		if cell.resumeSlot == 1 and cell.scheduledInterval > 0 then
 			local desiredInterval: number = getCellRenderInterval(cell)
 			if desiredInterval < cell.scheduledInterval then
@@ -550,7 +648,7 @@ local function onRenderStepped(frameDt: number): ()
 	-- promised to nearby bands, while every aged cell still advances without starvation.
 	local agingBudget: number = math.max(1, math.floor(work.budget * AGING_BUDGET_RATIO))
 	local agingDeadline: number = math.min(work.budget, work.attempted + agingBudget)
-	while work.attempted < agingDeadline and #agingRenderCells > 0 do
+	while work.attempted < agingDeadline and #agingRenderCells > 0 and work.transparencyWrites < work.visibilityBudget do
 		if nextAgingRenderCellIndex > #agingRenderCells then
 			nextAgingRenderCellIndex = 1
 		end
@@ -561,7 +659,7 @@ local function onRenderStepped(frameDt: number): ()
 
 	local dueCells: {DueRenderCell} = {}
 	for _, cell: RenderCell in activeRenderCells do
-		if cell.resumeSlot > 1 or cell.nextDueTime <= now then
+		if cell.isInView and Visibility.NeedsPass(cell.visibility) and (cell.resumeSlot > 1 or cell.nextDueTime <= now) then
 			dueCells[#dueCells + 1] = {
 			cell = cell,
 			distance = getCellCenterDistance(cell),
@@ -586,7 +684,7 @@ local function onRenderStepped(frameDt: number): ()
 	end
 
 	if measurementsEnabled then
-		Measurements.Record((os.clock() - measurementStart) * 1000, frameDt, #activeRenderCells, work.scheduledCellCount, work.attempted, work.dirtyTransformCount, work.budget, #agingRenderCells)
+		Measurements.Record((os.clock() - measurementStart) * 1000, frameDt, #activeRenderCells, work.scheduledCellCount, work.attempted, work.dirtyTransformCount, work.budget, #agingRenderCells, work.motionUpdates, work.transparencyWrites, hiddenCells, transitionCells, work.visibilityBudget)
 	end
 	debug.profileend()
 end
@@ -602,13 +700,12 @@ local function pushSnapshot(boidId: number, serverTime: number, position: Vector
 		if serverTime <= latestTime then
 			return
 		end
-
-		lastNetworkIntervalByIndex[index] = serverTime - latestTime
 	end
 
 	latestAtByIndex[index] = serverTime
 	latestPositionByIndex[index] = position
 	latestVelocityByIndex[index] = velocity
+	predictionSuspendedForByIndex[index] = 0
 	hasLatestByIndex[index] = true
 end
 
@@ -634,7 +731,15 @@ local function consumeCellSnapshot(origin: Vector3, networkBoids: buffer, boidCo
 	end
 end
 
--- Server corrections are consumed only by the replicated simulation as steering targets.
+local function consumeNetworkPacket(packet: buffer, sourceTime: number): ()
+	for offset, ox, oy, oz, count in PacketCodec.ForEachCellHeader(packet) do
+		for boidId, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, count) do
+			acceptSnapshotRow(boidId, sourceTime, ox + px, oy + py, oz + pz, vx, vy, vz)
+		end
+	end
+end
+
+-- Client-simulation mode consumes server packets as steering targets; renderer mode uses consumeNetworkPacket above.
 
 local nextRenderPartIndex = 1
 
@@ -652,6 +757,7 @@ local function registerBoid(boidId: number, boid: Model | BasePart, now: number)
 	-- Rendered boids are permanently excluded from Roblox world queries. Dense physics
 	-- query broad-phase work remains costly even for an Include-filtered ground ray.
 	part.CanQuery = false
+	part.LocalTransparencyModifier = 1
 
 	local motor = Instance.new("Motor6D")
 	motor.Name = "BoidMotor"
@@ -661,6 +767,8 @@ local function registerBoid(boidId: number, boid: Model | BasePart, now: number)
 
 	local index:number = nextRenderPartIndex
 	renderMotors[index] = motor
+	renderParts[index] = part
+	opacityByIndex[index] = 0
 	renderTransforms[index] = part.CFrame
 
 	--lastSnapshotTimeByBoid[boidId] = now
@@ -670,11 +778,8 @@ local function registerBoid(boidId: number, boid: Model | BasePart, now: number)
 	--print(`Boid registered at time {now}`)
 
 	nextRenderPartIndex += 1
-	-- An index created by an early snapshot may have seeded before this spawn
-	-- batch. The next query reseeds once from current Motor6D render poses.
-	if clientQueryIndex then
-		clientQueryIndexNeedsSeed = true
-	end
+	-- New rows enter the index on their first visible pose. Unknown snapshot IDs
+	-- are ignored, so a spawn must not reseed other cells' existing members.
 end
 
 seedClientQueryIndex = function(): ()
@@ -682,15 +787,12 @@ seedClientQueryIndex = function(): ()
 	if not queryIndex then
 		return
 	end
-	for renderIndex, boidId in boidIdByRenderIndex do
-		local motor = renderMotors[renderIndex]
-		local transform = renderTransforms[renderIndex]
-		local part = if motor then motor.Part1 else nil
-		local modelsByName: {[string]: BoidModel} = SharedTypes.BoidModels :: {[string]: BoidModel}
-		local model = boidModelById[boidId] or (part and modelsByName[part.Name]) or SharedTypes.BoidModels.Boid
-		local position = if part then part.Position elseif transform then transform.Position else nil
-		if position then
-			queryIndex:Update(boidId, position, BoidCollisionConfig.GetRadius(model))
+	for _, cell in activeRenderCells do
+		if not Visibility.NeedsPass(cell.visibility) then continue end
+		for _, renderIndex in cell.renderIndices do
+			if opacityByIndex[renderIndex] <= 0 then continue end
+			local boidId = boidIdByRenderIndex[renderIndex]
+			queryIndex:Update(boidId, renderTransforms[renderIndex].Position, BoidCollisionConfig.GetRadius(boidModelById[boidId]))
 		end
 	end
 end
@@ -709,6 +811,8 @@ local function unregisterBoid(boidId: number): ()
 	local lastBoidId = boidIdByRenderIndex[lastIndex]
 
 	renderMotors[index] = lastMotor
+	renderParts[index] = renderParts[lastIndex]
+	opacityByIndex[index] = opacityByIndex[lastIndex]
 	renderTransforms[index] = renderTransforms[lastIndex]
 	boidIdByRenderIndex[index] = lastBoidId
 	latestAtByIndex[index] = latestAtByIndex[lastIndex]
@@ -717,7 +821,8 @@ local function unregisterBoid(boidId: number): ()
 	renderPositionByIndex[index] = renderPositionByIndex[lastIndex]
 	renderVelocityByIndex[index] = renderVelocityByIndex[lastIndex]
 	nextRenderTimeByIndex[index] = nextRenderTimeByIndex[lastIndex]
-	lastNetworkIntervalByIndex[index] = lastNetworkIntervalByIndex[lastIndex]
+	motionResumeAtByIndex[index] = motionResumeAtByIndex[lastIndex]
+	predictionSuspendedForByIndex[index] = predictionSuspendedForByIndex[lastIndex]
 	facingByIndex[index] = facingByIndex[lastIndex]
 	hasLatestByIndex[index] = hasLatestByIndex[lastIndex]
 	hasRenderByIndex[index] = hasRenderByIndex[lastIndex]
@@ -728,6 +833,8 @@ local function unregisterBoid(boidId: number): ()
 	end
 
 	renderMotors[lastIndex] = nil
+	renderParts[lastIndex] = nil
+	opacityByIndex[lastIndex] = nil
 	renderTransforms[lastIndex] = nil
 	table.remove(latestAtByIndex, lastIndex)
 	table.remove(latestPositionByIndex, lastIndex)
@@ -735,7 +842,8 @@ local function unregisterBoid(boidId: number): ()
 	table.remove(renderPositionByIndex, lastIndex)
 	table.remove(renderVelocityByIndex, lastIndex)
 	table.remove(nextRenderTimeByIndex, lastIndex)
-	table.remove(lastNetworkIntervalByIndex, lastIndex)
+	table.remove(motionResumeAtByIndex, lastIndex)
+	table.remove(predictionSuspendedForByIndex, lastIndex)
 	table.remove(facingByIndex, lastIndex)
 	table.remove(hasLatestByIndex, lastIndex)
 	table.remove(hasRenderByIndex, lastIndex)
@@ -813,6 +921,8 @@ local function receiveNewBoidBatch(networkBoidsBatch: NetworkBoidsBatch): ()
 	end
 
 	local now: number = workspace:GetServerTimeNow()
+	-- Group partitions are established package metadata; individual boid IDs do not encode ownership.
+	replicatedGroupById[groupId] = LODConfig.GetSimulationKindForGroup(groupId) == "clientPrediction"
 
 	local newBoidModel:(Model | BasePart)
 	local boidId:number
@@ -891,6 +1001,7 @@ local function receiveDeleteGroup(groupId: number): ()
 	end
 
 	boidsByGroup[groupId] = nil
+	replicatedGroupById[groupId] = nil
 	renderedCountByGroup[groupId] = nil
 	groupColors[groupId] = nil
 end
@@ -992,7 +1103,7 @@ function BoidsRenderer.PickRenderedBoid(origin: Vector3, direction: Vector3, gro
 	local bestId: number? = nil
 	for index, boidId in boidIdByRenderIndex do
 		if groupId ~= nil and groupIdByBoid[boidId] ~= groupId then continue end
-		if not hasRenderByIndex[index] then continue end
+		if not hasRenderByIndex[index] or opacityByIndex[index] <= 0 then continue end
 		local position = renderTransforms[index].Position
 		local offset = position - origin
 		local along = offset:Dot(unit)
@@ -1084,6 +1195,7 @@ function BoidsRenderer.Start(viewingCameraObserver: ((CFrame, number) -> ())?): 
 end
 
 BoidsRenderer.ConsumeCellSnapshot = consumeCellSnapshot
+BoidsRenderer.ConsumeNetworkPacket = consumeNetworkPacket
 BoidsRenderer.ReceiveNewBoidBatch = receiveNewBoidBatch
 BoidsRenderer.ReceiveDeleteBoidBatch = receiveDeleteBoidBatch
 BoidsRenderer.ReceiveDeleteGroup = receiveDeleteGroup

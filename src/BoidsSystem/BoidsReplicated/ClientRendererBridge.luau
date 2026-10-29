@@ -13,6 +13,7 @@ local ClientRendererBridge = {}
 
 type Renderer = {
 	ConsumeCellSnapshot: (origin: Vector3, networkBoids: buffer, boidCount: number, completionTime: number) -> (),
+	ConsumeNetworkPacket: (packet: buffer, sourceTime: number) -> (),
 	ReceiveNewBoidBatch: (batch: SharedTypes.NetworkBoidsBatch) -> (),
 	ReceiveDeleteBoidBatch: (packet: buffer, lifetimes: {[number]: number}?) -> (),
 	ReceiveDeleteGroup: (groupId: number) -> (),
@@ -32,6 +33,10 @@ end
 
 function ClientRendererBridge.ConsumeCellSnapshot(origin: Vector3, networkBoids: buffer, boidCount: number, completionTime: number): ()
 	getRenderer().ConsumeCellSnapshot(origin, networkBoids, boidCount, completionTime)
+end
+
+function ClientRendererBridge.ConsumeNetworkPacket(packet: buffer, sourceTime: number): ()
+	getRenderer().ConsumeNetworkPacket(packet, sourceTime)
 end
 
 function ClientRendererBridge.ReceiveNewBoidBatch(batch: SharedTypes.NetworkBoidsBatch): ()

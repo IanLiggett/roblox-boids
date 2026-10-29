@@ -49,11 +49,12 @@ export type SimulationConfig = {
 export type SimulationKind = "server" | "clientPrediction" | "clientLocal"
 
 export type NetworkConfig = {
-	baseInterval: number,
 	nearDistance: number,
 	farDistance: number,
-	minIntervalMultiplier: number,
-	maxIntervalMultiplier: number,
+	nearPositionError: number,
+	farPositionError: number,
+	nearVelocityError: number,
+	farVelocityError: number,
 }
 
 export type Config = {
@@ -67,9 +68,7 @@ export type Config = {
 local PRESET_ATTRIBUTE = "BoidsLODPreset"
 LODConfig.PRESET_ATTRIBUTE = PRESET_ATTRIBUTE
 
--- Lower presets deliberately send substantially less frequent authoritative
--- correction data. Higher presets trade more network traffic for lower client
--- simulation divergence, as well as higher frequency simulation and rendering at the cost of the cpu, while retaining the same distance-based LOD shape.
+-- Higher presets spend more traffic on tighter position and velocity error bounds.
 local presets: {[PresetName]: Config} = {
 	low = {
 		client = {
@@ -110,11 +109,12 @@ local presets: {[PresetName]: Config} = {
 			backgroundIntervalMultiplier = 4,
 		},
 		network = {
-			baseInterval = 2,
 			nearDistance = 0,
 			farDistance = 512,
-			minIntervalMultiplier = 6,
-			maxIntervalMultiplier = 12,
+			nearPositionError = 8,
+			farPositionError = 32,
+			nearVelocityError = 4,
+			farVelocityError = 16,
 		},
 	},
 	medium = {
@@ -154,11 +154,12 @@ local presets: {[PresetName]: Config} = {
 			backgroundIntervalMultiplier = 3,
 		},
 		network = {
-			baseInterval = 2,
 			nearDistance = 0,
 			farDistance = 512,
-			minIntervalMultiplier = 4,
-			maxIntervalMultiplier = 8,
+			nearPositionError = 2,
+			farPositionError = 8,
+			nearVelocityError = 1,
+			farVelocityError = 4,
 		},
 	},
 	high = {
@@ -198,11 +199,12 @@ local presets: {[PresetName]: Config} = {
 			backgroundIntervalMultiplier = 2,
 		},
 		network = {
-			baseInterval = 2,
 			nearDistance = 0,
 			farDistance = 512,
-			minIntervalMultiplier = 2,
-			maxIntervalMultiplier = 4,
+			nearPositionError = 1,
+			farPositionError = 4,
+			nearVelocityError = 1,
+			farVelocityError = 2,
 		},
 	},
 }

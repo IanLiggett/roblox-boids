@@ -866,7 +866,9 @@ function Boids.Start(options: RuntimeConfig.Options?): ()
 	if isStarted then return end
 	local config = RuntimeConfig.Resolve(options)
 	isStarted = true
-	ActorsInitializer.InitializeBoidActors(config.actorCount)
+	if config.simulationEnabled then
+		ActorsInitializer.InitializeBoidActors(config.actorCount)
+	end
 	SimulationReplication.SetServerStateReader(function(boidId: number): (Vector3?, Vector3?)
 		if Boids.IsDeletionPending(boidId) then return nil, nil end
 		return Boids.GetBoidState(boidId)
@@ -875,7 +877,9 @@ function Boids.Start(options: RuntimeConfig.Options?): ()
 	SimulationReplication.StartServer()
 	BoidUpdates.Start()
 	RunService.Heartbeat:Connect(flushQueuedDeletions)
-	JobBuilder.Start(groups, config.targetActorJobMs)
+	if config.simulationEnabled then
+		JobBuilder.Start(groups, config.targetActorJobMs)
+	end
 end
 
 return Boids

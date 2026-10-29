@@ -173,7 +173,6 @@ local function handleJobResults(group: Group, job: Job, jobResults: WorkerJobRes
 			continue
 		end
 
-		cell.networkTick += 1
 
 
 	end

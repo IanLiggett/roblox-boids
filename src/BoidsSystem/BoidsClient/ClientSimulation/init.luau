@@ -6,6 +6,7 @@ local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: In
 	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 local RuntimeTypes = require(BoidsReplicated.RuntimeTypes)
 local RuntimeConfig = require(BoidsReplicated.RuntimeConfig)
+local ClientPresentationConfig = require(BoidsReplicated.ClientPresentationConfig)
 local SimulationReplication = require(BoidsReplicated.SimulationReplication)
 local Boids = require(BoidsReplicated.Boids)
 local ClientRendererBridge = require(BoidsReplicated.ClientRendererBridge)
@@ -17,13 +18,19 @@ local started = false
 
 function ClientSimulation.Start(options: RuntimeConfig.Options?): RuntimeTypes.Api
 	if started then return Boids end
+	local presentationMode = ClientPresentationConfig.Resolve()
 	started = true
 	CameraReporter.Start()
 	Renderer.Start(CameraReporter.Update)
 	ClientRendererBridge.SetRenderer(Renderer)
-	Boids.Start(options)
+	local runtimeOptions: RuntimeConfig.Options = {
+		actorCount = if options then options.actorCount else nil,
+		targetActorJobMs = if options then options.targetActorJobMs else nil,
+		simulationEnabled = presentationMode == "simulation",
+	}
+	Boids.Start(runtimeOptions)
 	if ClientSimulation.GetSimulationMode() ~= "client" then
-		SimulationReplication.StartClient(Boids)
+		SimulationReplication.StartClient(Boids, presentationMode == "renderer")
 	end
 	return Boids
 end

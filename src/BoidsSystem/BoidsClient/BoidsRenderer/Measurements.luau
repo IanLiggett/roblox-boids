@@ -6,17 +6,19 @@ export type Snapshot = {
  frameMsTotal: number, frameMsMax: number, activeCells: number,
  scheduledCells: number, scheduledBoids: number, dirtyTransforms: number,
  renderCap: number, agedCells: number,
+ motionUpdates: number, motionUpdatesTotal: number, transparencyWrites: number, transparencyWritesTotal: number,
+ hiddenCells: number, transitionCells: number, visibilityCap: number, transparencyWritesMax: number,
 }
 local enabled = false
 local state: Snapshot
 function Measurements.Reset(): ()
  state = {samples=0, rendererMsTotal=0, rendererMsMax=0, frameMsTotal=0, frameMsMax=0,
-  activeCells=0, scheduledCells=0, scheduledBoids=0, dirtyTransforms=0, renderCap=0, agedCells=0}
+  activeCells=0, scheduledCells=0, scheduledBoids=0, dirtyTransforms=0, renderCap=0, agedCells=0, motionUpdates=0, motionUpdatesTotal=0, transparencyWrites=0, transparencyWritesTotal=0, hiddenCells=0, transitionCells=0, visibilityCap=0, transparencyWritesMax=0}
 end
 function Measurements.SetEnabled(value: boolean): () enabled = value end
 function Measurements.IsEnabled(): boolean return enabled end
 function Measurements.Read(): Snapshot return table.clone(state) end
-function Measurements.Record(rendererMs: number, frameDt: number, activeCells: number, scheduledCells: number, scheduledBoids: number, dirtyTransforms: number, renderCap: number, agedCells: number): ()
+function Measurements.Record(rendererMs: number, frameDt: number, activeCells: number, scheduledCells: number, scheduledBoids: number, dirtyTransforms: number, renderCap: number, agedCells: number, motionUpdates: number, transparencyWrites: number, hiddenCells: number, transitionCells: number, visibilityCap: number): ()
  if not enabled then return end
  local frameMs = frameDt * 1000
  state.samples += 1
@@ -30,6 +32,14 @@ function Measurements.Record(rendererMs: number, frameDt: number, activeCells: n
  state.dirtyTransforms = dirtyTransforms
  state.renderCap = renderCap
  state.agedCells = agedCells
+ state.motionUpdates = motionUpdates
+ state.motionUpdatesTotal += motionUpdates
+ state.transparencyWrites = transparencyWrites
+ state.transparencyWritesTotal += transparencyWrites
+ state.hiddenCells = hiddenCells
+ state.transitionCells = transitionCells
+ state.visibilityCap = visibilityCap
+ state.transparencyWritesMax = math.max(state.transparencyWritesMax, transparencyWrites)
 end
 Measurements.Reset()
 return Measurements

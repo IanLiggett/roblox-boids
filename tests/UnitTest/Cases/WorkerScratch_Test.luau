@@ -51,7 +51,7 @@ return function(t: UnitTest.Context): ()
 				end
 				table.insert(pages,page)
 			end
-			table.insert(cells,{id=cellId,origin=Vector3.zero,networkTick=1,networkInterval=1,emitSnapshot=true,
+			table.insert(cells,{id=cellId,origin=Vector3.zero,emitSnapshot=true,
 				pages={pages=pages,pageCount=#pages,openPages={},pendingPages={}},pageCount=#pages,
 				scheduledBoidCount=count,processedBoidCount=0,boidCount=count})
 		end

@@ -26,7 +26,7 @@ rojo serve default.project.json
 
 Open the built place in Studio and connect the matching plugin to localhost **34873**. Start Play. This character-free demonstration needs no game's camera or input scripts. **F6** enters/exits observation; **F8** collapses/expands the dock. Inspector, Camera, and Session / LOD expose the existing tools. Developer authorization and benchmark exclusions still apply.
 
-Select a Scenario using `ActiveBoidsScenario` in [shared metadata](src/BoidsSystem/BoidsReplicated/init.meta.json); the current example is PolarSphereObstacle. `BoidSimulationMode` selects server, client, or both. Configure before a fresh Play session, not as hot reload.
+Select a Scenario using `ActiveBoidsScenario` in [shared metadata](src/BoidsSystem/BoidsReplicated/init.meta.json); the current example is PolarSphereObstacle. `BoidSimulationMode` selects server, client, or both. `BoidClientPresentationMode` selects `simulation` (default, client prediction with server corrections) or `renderer` (server packets feed the renderer directly; requires server simulation). Configure before a fresh Play session, not as hot reload.
 
 For examples, read the [Scenario catalog](src/BoidsSystem/Server/Scenarios/Registry/Catalog/init.luau) and [fixtures](src/BoidsSystem/Server/Scenarios/Registry/Catalog/Fixtures.luau). They own the paths, groups, fields, and generated world resources; this README does not duplicate their settings.
 

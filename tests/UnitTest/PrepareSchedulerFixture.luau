@@ -14,7 +14,7 @@ local DispatchPump = require(package.Boids.JobBuilder.DispatchPump)
 export type Pages = {pageCount: number, pending: boolean?}
 export type Cell = {
  id: number, origin: Vector3, boidCount: number, pages: Pages,
- networkTick: number, networkInterval: number,
+
 }
 export type Group = {
  id: number, cellCount: number, scheduler: SharedTypes.Scheduler<Cell>,
@@ -22,7 +22,7 @@ export type Group = {
 }
 export type Actor = {ready: boolean, targetJobWork: number}
 export type JobCell = {
- id: number, origin: Vector3, networkTick: number, networkInterval: number, emitSnapshot: boolean,
+ id: number, origin: Vector3, emitSnapshot: boolean,
  pages: Pages, pageCount: number, scheduledBoidCount: number, processedBoidCount: number, boidCount: number,
 }
 export type Job = {
@@ -38,7 +38,7 @@ export type Environment = {
  Schedulers: typeof(Scheduler),
  ActorsInitializer: {actors: {Actor}, IsActorFree: (Actor) -> boolean},
  BoidStorage: {MarkPagesPending: (Pages) -> ()},
- ViewerLOD: {GetDuePlayersForCell: (Cell, number, number) -> ({number}, boolean)},
+ ViewerLOD: {GetInterestedPlayersForCell: (Cell) -> ({number}, boolean)},
  RuntimeMetrics: {
   State: {},
   Add: ({}, string, number) -> (),

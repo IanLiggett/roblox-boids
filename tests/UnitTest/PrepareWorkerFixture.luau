@@ -8,7 +8,7 @@ export type RaycastHit = {Distance: number, Normal: Vector3?, Position: Vector3?
 export type RaycastProvider = (Vector3, Vector3) -> RaycastHit?
 export type Pages = {id: number?, pages: {SharedTypes.Page}, pageCount: number, openPages: {[number]: boolean}, pendingPages: {[number]: boolean}}
 export type Cell = {
- id: number, origin: Vector3, networkTick: number, networkInterval: number, emitSnapshot: boolean,
+ id: number, origin: Vector3, emitSnapshot: boolean,
  pages: Pages, pageCount: number, scheduledBoidCount: number, processedBoidCount: number, boidCount: number,
 }
 export type Input = {

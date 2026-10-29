@@ -634,5 +634,18 @@ Catalog.NewScenario(
 )
 
 
+-- Close-view stress case: one dense population rather than distant cohorts.
+-- Validation follows its rendered bounds to keep all 30k in the viewing cone.
+Catalog.NewScenario(
+	"BenchmarkNear30k",
+	makeBenchmarkGroups(1, 30000, 12, 0, 33000),
+	{},
+	{ { id = 1, position = Vector3.new(0, 24, 80) } },
+	15,
+	45,
+	"low",
+	"both"
+)
+
 Catalog.CleanupFixtures = Fixtures.Stop
 return Catalog
