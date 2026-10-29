@@ -12,9 +12,13 @@ JobBuilder dispatches earliest-due cell work using free Actor capacity rather th
 
 ## Replication, rendering, and queries
 
+NetworkResults.ServerTransport owns per-recipient last-sent prediction baselines and error-based network LOD. Workers return packed candidates for interested cells; after complete merge, the coordinator compares each decoded row once across recipients and queues only position/velocity errors beyond distance-selected thresholds. This adds a measured completed-row traversal, never a full-population storage scan. Baselines use quantized wire state and advance only on FireClient. Unreliable loss is accepted without recovery; pending rows coalesce by ID, and deletion/disconnect clear their state. The transport retains per-client token caps and homogeneous source-time packets.
+
 SimulationReplication owns authoritative lifecycle/group state and reliable bootstrap. The startup-only `BoidClientPresentationMode` selects either client simulation with network corrections or direct network-packet rendering; the default is `simulation`. Direct renderer mode retains reliable lifecycle handling but starts no client Actors or simulation job scheduler. It is incompatible with client-only `BoidSimulationMode`. NetworkResults preserves correction source time and direct local-buffer delivery. Both snapshot paths use renderer stale-time acceptance and the no-snap facing-first reconciliation rule.
 
 Boid IDs share all 65,536 u16 slots in each process. The coordinator allocates server IDs from the lowest free slot and client-local IDs from the highest, using hierarchical free bitmaps. Reliable client intake reserves server IDs even while commands are queued. A collision retires the local boid through normal settlement before creating the server replica; surviving IDs never change. Group IDs retain their server/client partition. Ownership is explicit, never inferred from a boid ID's numeric range.
+
+Renderer cell lists are partitioned by replica/local ownership. Binary cell-level distance visibility skips fully transparent membership work; camera culling immediately suspends offscreen scheduling without changing opacity or traversing members. Both retain snapshot/lifecycle intake and cached observation poses. Distance visibility transitions share the render budget and cap Instance transparency writes separately; client hit indexing excludes fully transparent rows.
 
 Server.BoidQueryIndexServer owns authoritative index lifetime and copied queries. Client queries and rendered-pose reads are package-owned too. Hosts consume results without acquiring mutable storage/index ownership. Diagnostics expose values, not scheduling authority.
 

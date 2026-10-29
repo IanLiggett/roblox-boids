@@ -54,8 +54,43 @@ type Report = {
 	memoryMb: {average: number?, minimum: number?, maximum: number?},
 	bandwidthKbps: {sendAverage: number?, receiveAverage: number?},
 	boidJobUpdateTransport: {payloadKbps: number, packetsPerSecond: number},
+	networkErrorSelection: {rates: {[string]: number}, recipients: {[string]: {[string]: number}}},
 	divergence: Divergence?,
 }
+
+-- Per-recipient windows expose the population cost without tuning accuracy to
+-- a traffic target. Buffer bytes exclude table/allocator overhead; engine Stats
+-- above remains the process-level memory/network measurement.
+local function summarizeNetwork(first: TransportMetrics.Snapshot, last: TransportMetrics.Snapshot, elapsed: number): {rates: {[string]: number}, recipients: {[string]: {[string]: number}}}
+	local rates: {[string]: number} = {
+		candidateRowsPerSecond = (last.candidateRows - first.candidateRows) / elapsed,
+		comparisonsPerSecond = (last.recipientComparisons - first.recipientComparisons) / elapsed,
+		selectedRowsPerSecond = (last.selectedRows - first.selectedRows) / elapsed,
+		sentRowsPerSecond = (last.sentRows - first.sentRows) / elapsed,
+		selectionMsPerSecond = (last.selectionMs - first.selectionMs) / elapsed,
+		capDroppedPackets = last.capDroppedPackets - first.capDroppedPackets,
+		capDroppedRows = last.capDroppedRows - first.capDroppedRows,
+		configuredPacketsPerClientSecond = last.configuredPacketsPerClientSecond,
+		batchingSeconds = last.batchingSeconds,
+	}
+	local recipients: {[string]: {[string]: number}} = {}
+	for userId, current in last.recipients do
+		local previous = first.recipients[userId]
+		local packets = current.sentPackets - (if previous then previous.sentPackets else 0)
+		local payload = current.sentPayloadBytes - (if previous then previous.sentPayloadBytes else 0)
+		local delay = current.queueDelayTotalMs - (if previous then previous.queueDelayTotalMs else 0)
+		recipients[tostring(userId)] = {
+			packetsPerSecond = packets / elapsed, payloadKbps = payload / elapsed / 1000,
+			operatingLimitUtilization = packets / elapsed / 500,
+			batchingTargetPacketsPerSecond = 400,
+			queueDelayAverageMs = if packets > 0 then delay / packets else 0,
+			queueDelaySessionMaxMs = current.queueDelayMaxMs,
+			baselineCount = current.baselineCount, stateBufferBytes = current.stateBufferBytes,
+			pendingRows = current.pendingRows,
+		}
+	end
+	return {rates = rates, recipients = recipients}
+end
 
 local reports: {[string]: Report} = {}
 local started: {[string]: boolean} = {}
@@ -284,6 +319,7 @@ function PerformanceTelemetry.Start(
 				payloadKbps = (endTransportMetrics.sentPayloadBytes - startTransportMetrics.sentPayloadBytes) / elapsed / 1000,
 				packetsPerSecond = (endTransportMetrics.sentPackets - startTransportMetrics.sentPackets) / elapsed,
 			},
+			networkErrorSelection = summarizeNetwork(startTransportMetrics, endTransportMetrics, elapsed),
 			divergence = divergence,
 		}
 		reports[key] = report

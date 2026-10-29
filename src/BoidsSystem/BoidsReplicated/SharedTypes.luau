@@ -166,9 +166,6 @@ export type Cell = {
 	boidCount: number,
 
 	pages: PagedBuffer,
-
-	networkTick: number,
-	networkInterval: number,
 }
 
 
@@ -212,10 +209,7 @@ export type SnapshotGroupsBySourceCell = {[number] : SimulationSnapshot}
 export type JobCell = {
 	id: number,
 	origin: Vector3,
-	
-	networkTick: number,
-	networkInterval: number,
-	
+
 	emitSnapshot: boolean,
 	
 	pages: PagedBuffer,

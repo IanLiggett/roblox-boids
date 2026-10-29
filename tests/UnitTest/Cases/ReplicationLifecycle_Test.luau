@@ -25,7 +25,7 @@ return function(t: UnitTest.Context): ()
 		return network.ConvertSimulationSnapshotToPackets({cell})[1]
 	end
 
-	t.test("correction freshness, live lifetime and malformed packet rejection", function()
+	t.test("correction freshness, live lifetime and trusted malformed packet failures", function()
 		local live, deleting = true, false
 		local received: {Correction} = {}
 		local intake = intakeModule.New({
@@ -63,10 +63,12 @@ return function(t: UnitTest.Context): ()
 		t.expect.equal(received[3].snapshotTime, 13)
 		intake.Consume(data, 0/0)
 		intake.Consume(data, math.huge)
+		-- The trusted-layout decoder can ignore an empty headerless payload;
+		-- truncated rows may throw and have no recovery guarantee.
 		intake.Consume(buffer.create(1), 14)
 		local truncated = buffer.create(buffer.len(data) - 1)
 		buffer.copy(truncated, 0, data, 0, buffer.len(truncated))
-		intake.Consume(truncated, 14)
+		t.expect.throws(function(): () intake.Consume(truncated, 14) end)
 		t.expect.equal(#received, 3)
 		intake.Consume(data, 14)
 		t.expect.equal(#received, 4)

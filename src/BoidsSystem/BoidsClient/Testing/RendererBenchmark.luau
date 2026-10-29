@@ -9,6 +9,8 @@ type Snapshot = {
  frameMsTotal: number, frameMsMax: number, activeCells: number,
  scheduledCells: number, scheduledBoids: number, dirtyTransforms: number,
  renderCap: number, agedCells: number,
+ motionUpdates: number, motionUpdatesTotal: number, transparencyWrites: number, transparencyWritesTotal: number,
+ hiddenCells: number, transitionCells: number, visibilityCap: number, transparencyWritesMax: number,
 }
 type Reader = {
  SetMeasurementsEnabled: (boolean) -> (), ResetMeasurements: () -> (),
@@ -60,6 +62,14 @@ function RendererBenchmark.Start(renderer: Reader): ()
   workspace:SetAttribute("RendererBenchmarkDirtyTransforms", s.dirtyTransforms)
   workspace:SetAttribute("RendererBenchmarkRenderCap", s.renderCap)
   workspace:SetAttribute("RendererBenchmarkAgedCells", s.agedCells)
+  workspace:SetAttribute("RendererBenchmarkMotionUpdates", s.motionUpdates)
+  workspace:SetAttribute("RendererBenchmarkMotionUpdatesTotal", s.motionUpdatesTotal)
+  workspace:SetAttribute("RendererBenchmarkTransparencyWrites", s.transparencyWrites)
+  workspace:SetAttribute("RendererBenchmarkTransparencyWritesTotal", s.transparencyWritesTotal)
+  workspace:SetAttribute("RendererBenchmarkHiddenCells", s.hiddenCells)
+  workspace:SetAttribute("RendererBenchmarkTransitionCells", s.transitionCells)
+  workspace:SetAttribute("RendererBenchmarkVisibilityCap", s.visibilityCap)
+  workspace:SetAttribute("RendererBenchmarkTransparencyWritesMax", s.transparencyWritesMax)
  end)
 end
 return RendererBenchmark

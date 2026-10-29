@@ -34,7 +34,7 @@ return function(t: UnitTest.Context): ()
 			Schedulers=Scheduler,
 			ActorsInitializer={actors=f.actors,IsActorFree=function(actor: Actor): boolean return actor.ready end},
 			BoidStorage={MarkPagesPending=function(pages: Pages): () t.expect.falsy(pages.pending);pages.pending=true end},
-			ViewerLOD={GetDuePlayersForCell=function(): ({number}, boolean) return {},false end},
+			ViewerLOD={GetInterestedPlayersForCell=function(): ({number}, boolean) return {},false end},
 			RuntimeMetrics={State={},Add=function(): () end,Sample=function(_: {},name: string,value: number): () f.samples[name]=value end},
 			ResultCommit={Run=function(group: Group,actor: Actor,job: Job): ()
 				t.expect.truthy(actor.ready);actor.ready=false
@@ -50,7 +50,7 @@ return function(t: UnitTest.Context): ()
 				return not s.alreadyScheduled and s.entity.boidCount>0 and s.nextDue<=now
 			end)
 			local group: Group={id=id,cellCount=1,scheduler=scheduler,usesPath=false,averageSight=16}
-			local cell: Cell={id=id,origin=Vector3.zero,boidCount=count,pages={pageCount=1},networkTick=1,networkInterval=1}
+			local cell: Cell={id=id,origin=Vector3.zero,boidCount=count,pages={pageCount=1}}
 			local schedulee=Scheduler.NewSchedulee(scheduler,cell,1)
 			schedulee.nextDue=due;Scheduler.EnqueueSchedulee(scheduler,schedulee)
 			f.groups[id]=group

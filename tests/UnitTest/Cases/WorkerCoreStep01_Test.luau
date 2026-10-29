@@ -58,7 +58,7 @@ return function(t: UnitTest.Context): ()
     end
     table.insert(pages,page)
    end
-   local cell: FixtureTypes.Cell={id=1,origin=Vector3.zero,networkTick=1,networkInterval=1,emitSnapshot=if emitSnapshot == nil then true else emitSnapshot,
+   local cell: FixtureTypes.Cell={id=1,origin=Vector3.zero,emitSnapshot=if emitSnapshot == nil then true else emitSnapshot,
     pages={pages=pages,pageCount=#pages,openPages={},pendingPages={}},
     pageCount=#pages,scheduledBoidCount=count,processedBoidCount=0,boidCount=count}
    local job: FixtureTypes.Input={groupId=1,usesPath=false,jobCells={cell},averageSight=16,detailedMetrics=detailed,movedBoids={}}

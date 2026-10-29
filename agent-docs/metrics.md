@@ -172,3 +172,13 @@ are insufficient.
 
 Do not turn instrumentation maintenance into unrelated optimization work. Preserve
 the explicit execution/retirement ownership described in runtime.md.
+
+## Network selection measurements
+
+TransportMetrics copied snapshots include candidateRows, recipientComparisons, selectedRows (including pending replacements), sentRows, selectionMs and cap drops. SelectionMs includes completed-row decoding, threshold checks and queue/gauge maintenance; packet construction and baseline advancement are in existing packetizationMs. Per-recipient counters expose packet/payload/row totals and queue-delay sum/max, plus live baselineCount, pendingRows and packed stateBufferBytes. Buffer bytes exclude table/allocator overhead. Queue delay is oldest retained batch age at dispatch, an upper-bound batch measure rather than per-row latency; session maximum is labelled explicitly.
+
+PerformanceTelemetry exports networkErrorSelection window rates and per-recipient packet/payload rates, 500-packet operating-limit utilization, the 400-packet tuning target, queue delay and state gauges. Read actual runtime Report_server/Report_client StringValues. This requires no recurring per-boid measurement scan. Engine Stats remain separate from canonical payload byte counts; never present payload rates as full wire bandwidth or --!native as proof of native execution.
+
+## Cell visibility measurements
+
+Renderer Measurements distinguish scheduledBoids (all budgeted membership visits, including hide-only passes) from motionUpdates and transparencyWrites, with totals for both. transparencyWritesMax tracks the highest per-frame write count, bounded by visibilityCap. hiddenCells counts skipped cells; transitionCells covers pending binary opacity passes. Transparency counters cover render-step changes, not the initial hidden property assigned during spawn. RendererBenchmark exports these through its existing Workspace attribute sampler; no additional population scan or callback is installed. Read metrics through a normal client runtime or its exported attributes, not a separate tool VM's require cache.

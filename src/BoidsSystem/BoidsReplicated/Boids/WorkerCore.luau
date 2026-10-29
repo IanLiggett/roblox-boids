@@ -745,8 +745,7 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 		end
 		
 		targetLocal = target - origin
-		
-		--shouldEmitSnapshot = jobCell.networkTick % jobCell.networkInterval == 0
+
 		shouldEmitSnapshot = jobCell.emitSnapshot
 		
 		ids = cellScratch.ids

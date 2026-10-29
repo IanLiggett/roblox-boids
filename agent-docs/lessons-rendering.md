@@ -1,5 +1,23 @@
 # Rendering Lessons
 
+[RENDERING] Hidden intervals must not become catch-up movement
+
+Tags: rendering, visibility, culling, distance fade, prediction, snapshot age, resume
+
+Rejected
+
+Skipping hidden members while continuing to use wall-clock render delta and snapshot age unchanged on reentry.
+
+Reason
+
+Cached poses stayed frozen, but the first resumed pass integrated the hidden interval and extrapolated stale velocity across it. Moving boids appeared scattered as they faded in, then rapidly corrected. Zero-velocity visibility tests missed this.
+
+Current guardrail
+
+Exclude suspended time from both integration and prediction age, repairing clocks lazily for scheduled members. Preserve source timestamps and normal active prediction; reset prediction offsets on a fresh snapshot. Carry row suspension across cell migration and dense swaps. Verify nonzero velocity with a long hidden interval, frozen pose while hidden, and bounded movement after distance/camera reentry.
+
+---
+
 [RENDERING] Hit highlights
 
 Tags: rendering, hit, Highlight, flash, color, dense combat

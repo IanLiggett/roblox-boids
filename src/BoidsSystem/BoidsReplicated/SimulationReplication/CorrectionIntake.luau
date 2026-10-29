@@ -31,16 +31,8 @@ function CorrectionIntake.New(boids: BoidsApi): Intake
 	local function consume(packet: buffer, sourceTime: number): ()
 		if sourceTime ~= sourceTime or math.abs(sourceTime) == math.huge then return end
 
-		-- Validating a packet from the server is pointless and expensive. It should be allowed to fail and throw an error if the server has made a mistake.
-		-- Validate the complete packet before accepting any row.
-		-- local cursor = 0
-		-- local length = buffer.len(packet)
-		-- while cursor < length do
-		-- 	if length - cursor < PacketCodec.CELL_HEADER_BYTES then return end
-		-- 	local count = buffer.readu16(packet, cursor + 6)
-		-- 	cursor += PacketCodec.CELL_HEADER_BYTES + count * PacketCodec.BOID_ROW_BYTES
-		-- 	if cursor > length then return end
-		-- end
+		-- Server-authored packet layout is trusted. A malformed payload is a
+		-- programmer error; do not add a second per-row validation traversal.
 
 		boids.SetReconciliationTargets(packet, sourceTime, function(id: number, position: Vector3, velocity: Vector3, time: number): boolean
 			local previous = targets[id]

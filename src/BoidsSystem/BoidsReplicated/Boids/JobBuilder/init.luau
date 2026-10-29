@@ -92,7 +92,7 @@ local function buildJob(group: Group, currentTick: number, targetCost: number, f
 
 	local recipients: JobRecipients = {}
 	local boidsScheduled:number = 0
-	local duePlayers: {number}, emitSnapshot: boolean
+	local interestedPlayers: {number}, emitSnapshot: boolean
 	local nextSchedulee:Schedulee<Cell>?, nextCell:Cell, cost:number, cellBoidCount:number
 	while targetCost > job.estimatedCost do
 		nextSchedulee = Schedulers.GetNextSchedulee(scheduler, currentTick)
@@ -117,15 +117,12 @@ local function buildJob(group: Group, currentTick: number, targetCost: number, f
 			-- It publishes direct local cell snapshots with no remote recipients.
 			emitSnapshot = true
 		else
-			duePlayers, emitSnapshot = ViewerLOD.GetDuePlayersForCell(nextCell, nextSchedulee.lastUpdated, now)
+			interestedPlayers, emitSnapshot = ViewerLOD.GetInterestedPlayersForCell(nextCell)
 		end
 
 		job.jobCells[job.cellCount + 1] = {
 			id = nextCell.id,
 			origin = nextCell.origin,
-
-			networkTick = nextCell.networkTick,
-			networkInterval = nextCell.networkInterval,
 
 			emitSnapshot = emitSnapshot,
 
@@ -137,7 +134,7 @@ local function buildJob(group: Group, currentTick: number, targetCost: number, f
 		}
 		
 		if emitSnapshot and not IS_CLIENT then
-			recipients[nextCell.id] = duePlayers
+			recipients[nextCell.id] = interestedPlayers
 		end
 
 		Schedulers.ScheduleSchedulee(nextSchedulee)

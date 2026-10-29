@@ -22,7 +22,7 @@ export type RaycastHit = {Distance: number, Normal: Vector3?, Position: Vector3?
 export type RaycastProvider = (Vector3, Vector3) -> RaycastHit?
 export type Pages = {id: number?, pages: {SharedTypes.Page}, pageCount: number, openPages: {[number]: boolean}, pendingPages: {[number]: boolean}}
 export type Cell = {
- id: number, origin: Vector3, networkTick: number, networkInterval: number, emitSnapshot: boolean,
+ id: number, origin: Vector3, emitSnapshot: boolean,
  pages: Pages, pageCount: number, scheduledBoidCount: number, processedBoidCount: number, boidCount: number,
 }
 export type Input = {
@@ -119,7 +119,7 @@ local U8_POS_DEQUANTIZE_SCALE: number = CELL_SIZE / MAX_U8
 local U8_VEL_DEQUANTIZE_SCALE: number = NORM_VELOCITY_RANGE / MAX_U8
 
 
-local NON_NAN = Vector3.new(0.01, 0.01, 0.01)
+local NON_NAN: Vector3 = Vector3.new(0.01, 0.01, 0.01)
 
 local U8_SIZE = 1
 local U16_SIZE = 2
@@ -307,7 +307,7 @@ local function retrieveBoidVelocity(deserializedVelocities:{Vector3}, boidVeloci
 	return deserializedVelocities[boidIndex]
 end
 
-local MAX_SEEN = 100
+local MAX_SEEN = 20
 
 -- Snapshot reconciliation is data-driven rather than a simulation mode. Every
 -- boid has an inert target record, so this adds no per-boid mode branch.
@@ -786,8 +786,7 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 		end
 		
 		targetLocal = target - origin
-		
-		--shouldEmitSnapshot = jobCell.networkTick % jobCell.networkInterval == 0
+
 		shouldEmitSnapshot = jobCell.emitSnapshot
 		
 		ids = cellScratch.ids

@@ -94,6 +94,9 @@
                                                                     "HostHandoffVerification": {
                                                                         "$path": "tests/Client/VerifyHostHandoff.luau"
                                                                     },
+                                                                    "RenderVisibilityVerification": {
+                                                                        "$path": "tests/Client/VerifyRenderVisibility.luau"
+                                                                    },
                                                                     "BoidsScenarioLauncher":  {
                                                                                                   "$path":  "scenario/Start.client.luau"
                                                                                               },

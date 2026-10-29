@@ -64,7 +64,7 @@ return function(t: UnitTest.Context): ()
 				end
 				table.insert(pages, page)
 			end
-			local cell: FixtureTypes.Cell = { id = 1, origin = Vector3.zero, networkTick = 1, networkInterval = 1, emitSnapshot = false, pages = { id = 1, pages = pages, openPages = {}, pendingPages = {}, pageCount = #pages }, pageCount = #pages, scheduledBoidCount = count, processedBoidCount = 0, boidCount = count }
+			local cell: FixtureTypes.Cell = { id = 1, origin = Vector3.zero, emitSnapshot = false, pages = { id = 1, pages = pages, openPages = {}, pendingPages = {}, pageCount = #pages }, pageCount = #pages, scheduledBoidCount = count, processedBoidCount = 0, boidCount = count }
 			local job: FixtureTypes.Input = { id = 1, groupId = 1, usesPath = false, jobCells = { cell }, movedBoids = {}, cellCount = 1, startTime = 0, completionTime = -1, estimatedCost = 1, averageSight = 16, detailedMetrics = true }
 			local returned: FixtureTypes.Result?
 			handlers.NewJob(job, { Fire = function(_: FixtureTypes.Reply, value: FixtureTypes.Result?, _delay: number?, _failure: string?): () returned = value end }, 1, 100 / 60)

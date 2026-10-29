@@ -56,24 +56,6 @@ local function simMultiplierForDistanceSq(dSq: number, config: SimulationLODConf
 	return math.round(config.minIntervalMultiplier + alpha * (config.maxIntervalMultiplier - config.minIntervalMultiplier))
 end
 
-local function networkMultiplierForDistanceSq(dSq: number, config: NetworkLODConfig): number
-	const alpha: number = distanceAlphaSq(dSq, config.nearDistance, config.farDistance)
-	return math.round(config.minIntervalMultiplier + alpha * (config.maxIntervalMultiplier - config.minIntervalMultiplier))
-end
-
-
-local function stablePhase(userId: number, cellId: number, interval: number): number
-	local seed = userId * 1103515245 + cellId * 12345
-	return ((seed % 10000) / 10000) * interval
-end
-
-local function crossedSendBoundary(lastTime: number, now: number, interval: number, phase: number): boolean
-	local previousBucket = math.floor((lastTime - phase) / interval)
-	local currentBucket = math.floor((now - phase) / interval)
-
-	return currentBucket > previousBucket
-end
-
 local function getGroupSimulationConfig(group: Group): SimulationLODConfig
 	return LODConfig.GetSimulationConfig(LODConfig.GetSimulationKindForGroup(group.id))
 end
@@ -91,32 +73,28 @@ local function getCellSimMultiplier(group: Group, cell: Cell): number
 	return math.min(config.backgroundIntervalMultiplier, simMultiplierForDistanceSq(nearestDistanceSq, config))
 end
 
-local function getDuePlayersForCell(cell: Cell, lastCellUpdateTime: number, now: number): ({number}, boolean)
+-- Interest is independent of update cadence. Thresholds are sampled once per
+-- completed render/network cell and recipient, not once per boid.
+function ViewerLOD.GetNetworkTolerances(userId: number, origin: Vector3): (number?, number?)
+	local viewer = viewerObservers[userId]
+	if not viewer then return nil, nil end
 	local config: NetworkLODConfig = LODConfig.GetActive().network
-	const duePlayers: {number} = {}
-	const cellCenter: Vector3 = cell.origin + HALF_CELL
-	const farDistanceSq = config.farDistance * config.farDistance
-	
-	local hasDuePlayer: boolean = false
-	
-	local dSq: number, networkMultiplier: number, interval: number, phase: number
-	for userId: number, viewer: ViewerObservers in viewerObservers do
-		dSq = getNearestObserverDistanceSq(viewer, cellCenter)
-		if dSq > farDistanceSq then
-			continue
-		end
+	local dSq = getNearestObserverDistanceSq(viewer, origin + HALF_CELL)
+	if dSq > config.farDistance * config.farDistance then return nil, nil end
+	local alpha = distanceAlphaSq(dSq, config.nearDistance, config.farDistance)
+	local positionError = config.nearPositionError + alpha * (config.farPositionError - config.nearPositionError)
+	local velocityError = config.nearVelocityError + alpha * (config.farVelocityError - config.nearVelocityError)
+	return positionError * positionError, velocityError * velocityError
+end
 
-		networkMultiplier = networkMultiplierForDistanceSq(dSq, config)
-		interval = config.baseInterval * networkMultiplier
-		phase = stablePhase(userId, cell.id, interval)
-
-		if crossedSendBoundary(lastCellUpdateTime, now, interval, phase) then
-			hasDuePlayer = true
-			table.insert(duePlayers, userId)
+local function getInterestedPlayersForCell(cell: Cell): ({number}, boolean)
+	local interested: {number} = {}
+	for userId in viewerObservers do
+		if ViewerLOD.GetNetworkTolerances(userId, cell.origin) then
+			interested[#interested + 1] = userId
 		end
 	end
-
-	return duePlayers, hasDuePlayer
+	return interested, #interested > 0
 end
 
 local function getOrCreateViewer(viewerId: number): ViewerObservers
@@ -188,5 +166,5 @@ function ViewerLOD.Start(): ()
  startViewerTracking()
 end
 ViewerLOD.GetCellSimMultiplier = getCellSimMultiplier
-ViewerLOD.GetDuePlayersForCell = getDuePlayersForCell
+ViewerLOD.GetInterestedPlayersForCell = getInterestedPlayersForCell
 return ViewerLOD
