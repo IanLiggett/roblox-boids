@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local BoidsReplicated = script.Parent.Parent
 local SharedTypes = require(BoidsReplicated.SharedTypes)
 local RuntimeMetrics = require(BoidsReplicated.RuntimeMetrics)
+local LODConfig = require(BoidsReplicated.LODConfig)
 local ViewerLOD = require(BoidsReplicated.Boids.JobBuilder.ViewerLOD)
 local PacketCodec = require(script.Parent.PacketCodec)
 local PredictionState = require(script.Parent.PredictionState)
@@ -12,7 +13,7 @@ local TransportMetrics = require(script.Parent.TransportMetrics)
 local ServerTransport = {}
 local metrics = RuntimeMetrics.State
 type SimulationSnapshot = SharedTypes.SimulationSnapshot
-type Accumulator = {prediction: PredictionState.State, oldestPendingTime: number?, tokens: number}
+type Accumulator = {prediction: PredictionState.State, oldestPendingTime: number?, nextReadyTime: number, minSendIntervalSeconds: number, tokens: number}
 
 local boidJobUpdate: UnreliableRemoteEvent = BoidsReplicated.Remotes.BoidJobUpdate
 local accumulators: {[number]: Accumulator} = {}
@@ -23,9 +24,15 @@ local MAX_PACKET_AGE = 0.075
 local function getAccumulator(userId: number): Accumulator
 	local state = accumulators[userId]
 	if state then return state end
-	local created: Accumulator = {prediction = PredictionState.New(), oldestPendingTime = nil, tokens = CALLS_PER_CLIENT_PER_SECOND}
+	local created: Accumulator = {prediction = PredictionState.New(), oldestPendingTime = nil, nextReadyTime = 0, minSendIntervalSeconds = LODConfig.GetNetworkConfig().minSendIntervalSeconds, tokens = CALLS_PER_CLIENT_PER_SECOND}
 	accumulators[userId] = created
 	return created
+end
+
+local function refreshInterval(state: Accumulator, interval: number): ()
+	if interval == state.minSendIntervalSeconds then return end
+	state.minSendIntervalSeconds = interval
+	state.nextReadyTime = 0
 end
 
 local function updateGauges(userId: number, state: Accumulator): ()
@@ -38,7 +45,9 @@ local function flushPlayer(userId: number, state: Accumulator, flushPartial: boo
 	local prediction = state.prediction
 	local packetStart = os.clock()
 	debug.profilebegin("Boids.Packetization")
-	local byTime, times = PredictionState.BuildSnapshots(prediction)
+	local now = workspace:GetServerTimeNow()
+	local byTime, times, nextReadyTime = PredictionState.BuildSnapshots(prediction, now, state.minSendIntervalSeconds)
+	state.nextReadyTime = nextReadyTime
 	local droppedPackets = 0
 	for _, sourceTime in times do
 		local packets = PacketCodec.ConvertSimulationSnapshotToPackets(byTime[sourceTime])
@@ -49,10 +58,13 @@ local function flushPlayer(userId: number, state: Accumulator, flushPartial: boo
 			end
 			-- Full source-time packets may leave immediately. Other source times'
 			-- partial packets retain their batching deadline instead of piggybacking.
-			if not flushPartial and buffer.len(packet) + PacketCodec.CELL_HEADER_BYTES + PacketCodec.BOID_ROW_BYTES <= PacketCodec.MAX_PACKET_BYTES then continue end
+			if not flushPartial and buffer.len(packet) + PacketCodec.CELL_HEADER_BYTES + PacketCodec.BOID_ROW_BYTES <= PacketCodec.MAX_PACKET_BYTES then
+				state.nextReadyTime = math.min(state.nextReadyTime, now)
+				continue
+			end
 			state.tokens -= 1
 			boidJobUpdate:FireClient(player, packet, sourceTime)
-			local rows = PredictionState.RecordSent(prediction, packet, sourceTime)
+			local rows = PredictionState.RecordSent(prediction, packet, sourceTime, workspace:GetServerTimeNow())
 			TransportMetrics.RecordSent(userId, buffer.len(packet), rows, math.max(0, workspace:GetServerTimeNow() - (state.oldestPendingTime :: number)) * 1000)
 		end
 	end
@@ -60,7 +72,7 @@ local function flushPlayer(userId: number, state: Accumulator, flushPartial: boo
 		TransportMetrics.RecordCapDrop(userId, droppedPackets, prediction.count)
 		PredictionState.ClearPending(prediction)
 	end
-	if prediction.count == 0 then state.oldestPendingTime = nil end
+	if prediction.count == 0 then state.oldestPendingTime = nil; state.nextReadyTime = 0 end
 	updateGauges(userId, state)
 	debug.profileend()
 	RuntimeMetrics.Add(metrics, "packetizationMs", (os.clock() - packetStart) * 1000)
@@ -69,7 +81,7 @@ end
 function ServerTransport.DiscardBoids(removed: {[number]: boolean}): ()
 	for userId, state in accumulators do
 		for id in removed do PredictionState.Discard(state.prediction, id) end
-		if state.prediction.count == 0 then state.oldestPendingTime = nil end
+		if state.prediction.count == 0 then state.oldestPendingTime = nil; state.nextReadyTime = 0 end
 		updateGauges(userId, state)
 	end
 end
@@ -84,6 +96,7 @@ function ServerTransport.EnqueueSimulationSnapshotForPlayers(players: {number}, 
 	local positionErrors: {number} = {}
 	local velocityErrors: {number} = {}
 	local queuedAt = workspace:GetServerTimeNow()
+	local interval = LODConfig.GetNetworkConfig().minSendIntervalSeconds
 	for _, cell in snapshot do
 		table.clear(states)
 		table.clear(userIds)
@@ -95,6 +108,7 @@ function ServerTransport.EnqueueSimulationSnapshotForPlayers(players: {number}, 
 			if not positionSq then continue end
 			local index = #states + 1
 			states[index] = getAccumulator(userId)
+			refreshInterval(states[index], interval)
 			userIds[index] = userId
 			positionErrors[index] = positionSq
 			velocityErrors[index] = velocitySq :: number
@@ -111,6 +125,7 @@ function ServerTransport.EnqueueSimulationSnapshotForPlayers(players: {number}, 
 				if PredictionState.Consider(state.prediction, id, worldX, worldY, worldZ, vx, vy, vz, sourceTime, positionErrors[index], velocityErrors[index], cell.origin, cell.networkBoids, rowOffset) then
 					selected += 1
 					if not state.oldestPendingTime then state.oldestPendingTime = queuedAt end
+					state.nextReadyTime = math.min(state.nextReadyTime, PredictionState.GetReadyTime(state.prediction, id, state.minSendIntervalSeconds))
 				elseif state.prediction.count == 0 then
 					state.oldestPendingTime = nil
 				end
@@ -123,7 +138,7 @@ function ServerTransport.EnqueueSimulationSnapshotForPlayers(players: {number}, 
 	debug.profileend()
 	for _, userId in players do
 		local state = accumulators[userId]
-		if state and (state.prediction.rowsByTime[sourceTime] or 0) * PacketCodec.BOID_ROW_BYTES + PacketCodec.CELL_HEADER_BYTES + PacketCodec.BOID_ROW_BYTES > PacketCodec.MAX_PACKET_BYTES then
+		if state and queuedAt >= state.nextReadyTime and (state.prediction.rowsByTime[sourceTime] or 0) * PacketCodec.BOID_ROW_BYTES + PacketCodec.CELL_HEADER_BYTES + PacketCodec.BOID_ROW_BYTES > PacketCodec.MAX_PACKET_BYTES then
 			flushPlayer(userId, state, false)
 		end
 	end
@@ -140,9 +155,11 @@ function ServerTransport.StartServer(): ()
 	end)
 	RunService.PostSimulation:Connect(function(dt: number): ()
 		local now = workspace:GetServerTimeNow()
+		local interval = LODConfig.GetNetworkConfig().minSendIntervalSeconds
 		for userId, state in accumulators do
 			state.tokens = math.min(CALLS_PER_CLIENT_PER_SECOND, state.tokens + CALLS_PER_CLIENT_PER_SECOND * dt)
-			if state.oldestPendingTime and now - state.oldestPendingTime >= MAX_PACKET_AGE then flushPlayer(userId, state, true) end
+			refreshInterval(state, interval)
+			if state.oldestPendingTime and now >= state.nextReadyTime and now - state.oldestPendingTime >= MAX_PACKET_AGE then flushPlayer(userId, state, true) end
 		end
 	end)
 end

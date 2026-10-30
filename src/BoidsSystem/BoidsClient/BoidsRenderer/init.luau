@@ -581,6 +581,7 @@ local function onRenderStepped(frameDt: number): ()
 	local measurementStart: number = if measurementsEnabled then os.clock() else 0
 	debug.profilebegin("BoidsRendererMotor6D")
 	local activeConfig = LODConfig.GetActive()
+	local networkLOD = LODConfig.GetNetworkConfig()
 	clientLOD = activeConfig.client
 	local view = Visibility.CreateView(Camera.CFrame, Camera.FieldOfView, Camera.ViewportSize)
 	framePosition = view.position
@@ -625,7 +626,7 @@ local function onRenderStepped(frameDt: number): ()
 		end
 		local opacity = 1
 		if cell.isReplicated then
-			opacity = Visibility.DistanceOpacity((cell.networkCenter - view.position).Magnitude, activeConfig.network.farDistance)
+			opacity = Visibility.DistanceOpacity((cell.networkCenter - view.position).Magnitude, networkLOD.farDistance)
 		end
 		if Visibility.SetTarget(cell.visibility, opacity) then
 			cell.resumeSlot = 1
