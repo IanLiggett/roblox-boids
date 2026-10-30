@@ -70,6 +70,8 @@ local currentSimTick = Quantization.CurrentSimTick
 local tickDeltaSeconds = Quantization.TickDeltaSeconds
 
 local CELL_SIZE:number = Quantization.CELL_SIZE
+local CELL_MIN: number = -Quantization.CELL_MARGIN
+local CELL_MAX: number = CELL_SIZE + Quantization.CELL_MARGIN
 local MAX_U8: number = Quantization.MAX_U8_INT
 
 local NORM_VELOCITY_MIN:number = Quantization.NORM_VELOCITY_MIN
@@ -78,7 +80,7 @@ local VELOCITY_MIN:number = Quantization.VELOCITY_MIN
 local VELOCITY_RANGE:number = Quantization.VELOCITY_RANGE
 
 
-local U8_POS_DEQUANTIZE_SCALE: number = CELL_SIZE / MAX_U8
+local U8_POS_DEQUANTIZE_SCALE: number = Quantization.POSITION_RANGE / MAX_U8
 local U8_VEL_DEQUANTIZE_SCALE: number = NORM_VELOCITY_RANGE / MAX_U8
 
 
@@ -497,12 +499,13 @@ local function getBucketSearch(searchRadius: number): BucketSearch
 end
 
 local function isGravityWellRelevantToCell(gravityWell: GravityWell, cellOrigin: Vector3): boolean
-	local cellMax = cellOrigin + Vector3.new(CELL_SIZE, CELL_SIZE, CELL_SIZE)
+	local cellMin: Vector3 = cellOrigin + Vector3.one * CELL_MIN
+	local cellMax: Vector3 = cellOrigin + Vector3.one * CELL_MAX
 	local position = gravityWell.position
 	local nearest = Vector3.new(
-		math.clamp(position.X, cellOrigin.X, cellMax.X),
-		math.clamp(position.Y, cellOrigin.Y, cellMax.Y),
-		math.clamp(position.Z, cellOrigin.Z, cellMax.Z)
+		math.clamp(position.X, cellMin.X, cellMax.X),
+		math.clamp(position.Y, cellMin.Y, cellMax.Y),
+		math.clamp(position.Z, cellMin.Z, cellMax.Z)
 	)
 	local offset = position - nearest
 	return offset:Dot(offset) <= gravityWell.influenceRadius * gravityWell.influenceRadius
@@ -1205,9 +1208,9 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 			end
 			position += velocity * speed * dt
 			x, y, z = position.X, position.Y, position.Z
-			if  x < 0 or x >= CELL_SIZE
-				or y < 0 or y >= CELL_SIZE
-				or z < 0 or z >= CELL_SIZE
+			if  x < CELL_MIN or x > CELL_MAX
+				or y < CELL_MIN or y > CELL_MAX
+				or z < CELL_MIN or z > CELL_MAX
 			then
 				measurement.migratedBoids += 1
 				worldPosition = origin + position

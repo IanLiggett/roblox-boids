@@ -165,11 +165,11 @@ local function clampU8(value: number): number
 end
 
 local function quantizePositionAxis(axis: number): number
-	return clampU8((axis / Quantization.CELL_SIZE) * MAX_U8)
+	return clampU8(((axis - Quantization.POSITION_MIN) / Quantization.POSITION_RANGE) * MAX_U8)
 end
 
 local function dequantizePositionAxis(value :number): number
-	return (value / MAX_U8) * Quantization.CELL_SIZE
+	return (value / MAX_U8) * Quantization.POSITION_RANGE + Quantization.POSITION_MIN
 end
 
 local function quantizeVelocityAxis(axis: number): number

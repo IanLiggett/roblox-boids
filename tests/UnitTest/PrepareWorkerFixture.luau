@@ -22,6 +22,7 @@ export type Result = {
 export type Reply = {Fire: (Reply, Result?, number?, string?) -> ()}
 export type MessageReconciliationTarget = {boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number}
 export type Handlers = {
+ NewGlobalGravityWell: (SharedTypes.GravityWell) -> (),
  NewJob: (Input, Reply, number, number) -> (),
  NewBoidsStatsBatch: ({groupId: number, boidCount: number, data: buffer, lifetimes: {number}}) -> (),
  NewGroupTarget: (number, SharedTypes.Target, number) -> (),

@@ -647,5 +647,26 @@ Catalog.NewScenario(
 	"both"
 )
 
+-- Cross x=64 repeatedly while travelling along it; no flock forces obscure
+-- the membership cost in this controlled companion to BenchmarkReference20k.
+local boundaryGroups: {GroupDefinition} = {}
+for index = 1, 10 do
+	local y = 32 + (index - 1) * 64
+	boundaryGroups[index] = {
+		name = `Boundary_{index}`, boidCount = 2000,
+		center = Vector3.new(63, y, -160), spread = 1, seed = 34000 + index,
+		color = Color3.fromHSV(index / 10, 0.8, 1),
+		tuning = {maxSpeed = 20, minSpeed = 20, sight = 16, avoidance = 0,
+			separation = 0, repulsion = 0, repulsionStrength = 0,
+			alignment = 0, cohesion = 0, targetBias = 100},
+		path = makeStaticPath({Vector3.new(63,y,-160), Vector3.new(65,y,-80),
+			Vector3.new(63,y,0), Vector3.new(65,y,80), Vector3.new(63,y,160),
+			Vector3.new(65,y,80), Vector3.new(63,y,0), Vector3.new(65,y,-80)}),
+		switchToClosestNode = true, loops = true, pathArrivalRadius = 4,
+	}
+end
+Catalog.NewScenario("BenchmarkCellBoundary20k", boundaryGroups, {},
+	{{id = 1, position = Vector3.new(0,200,700)}}, 15, 45, "low", "both")
+
 Catalog.CleanupFixtures = Fixtures.Stop
 return Catalog

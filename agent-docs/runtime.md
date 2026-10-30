@@ -2,6 +2,14 @@
 
 Detailed editing constraints; start with ../docs/architecture.md. This is not a tutorial.
 
+Simulation cell membership and position encoding
+
+- Quantization.CELL_SIZE remains the 64-stud grid stride. CELL_MARGIN is a shared session-fixed constant with an owner-confirmed default of 4 studs after review of 0/2/4/8 benchmarks. Change it only between fresh sessions, shipping matching server/client code.
+- A member may occupy the inclusive local box [-CELL_MARGIN, CELL_SIZE + CELL_MARGIN]. Only movement beyond that box migrates it, directly to the ordinary grid cell containing its world position. Cell-center scheduling and network interest retain their existing rules.
+- Packed storage and snapshot position axes cover POSITION_MIN=-CELL_MARGIN through POSITION_MIN+POSITION_RANGE, with POSITION_RANGE=CELL_SIZE+2*CELL_MARGIN. Row byte counts are unchanged; old and new encoded rows are not interchangeable. All position decoders, including direct local renderer intake, use this shared mapping. At margin 4, U8 axis spacing is 72/255 studs.
+- Gravity-well broad-phase filtering uses expanded cell bounds. Query and renderer membership still use decoded world positions and their independent grids; no simulation membership margin is applied to them.
+- BenchmarkCellBoundary20k supplies fixed-seed boundary-following paths without flock forces. Compare it and BenchmarkReference20k using minimal instrumentation, 15-second warmup/45-second samples, three fresh runs per margin. For controlled comparisons, normal server/client test scripts set the existing runtime's viewer to camera-disabled with a fixed observer at (0,200,700) five seconds after startup; verify both scripts executed. A configured camera pose alone does not prove the runtime has matching observer interest. BenchmarkHarness records benchmarkCellMargin; compare migrations per processed row, total worker/coordinator cost, throughput, latency, cell counts and correction traffic.
+
 Boids Runtime Architecture
 
 Package boundary
@@ -113,7 +121,7 @@ LOD
 Current implementation
 
 - LODConfig has independent server, client-prediction, and client-local simulation settings.
-- LODConfig.client.visibleRenderBands, offscreenHertz, maxRenderBoidsPerFrame, and peripheralLodDistanceScale are the canonical renderer performance schedule. Renderer cells are 64 studs, independently subdividing the unchanged 128-stud simulation/query cells; visible-band work is selected per renderer cell, never per-frame per boid. Peripheral scale expands effective visible distance only near the view-cone edge.
+- LODConfig.client.visibleRenderBands, offscreenHertz, maxRenderBoidsPerFrame, and peripheralLodDistanceScale are the canonical renderer performance schedule. Renderer cells are 32 studs, independently subdividing the unchanged 64-stud simulation/transport cells; visible-band work is selected per renderer cell, never per-frame per boid. Peripheral scale expands effective visible distance only near the view-cone edge.
 
 Viewer observer scheduling
 

@@ -12,6 +12,7 @@ local BenchmarkConfig = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: In
 	:: typeof(game.ServerScriptService.BoidsSystem.BoidsReplicated)
 
 local RuntimeConfig = require(BenchmarkConfig.RuntimeConfig)
+local Quantization = require(BenchmarkConfig.Quantization)
 local BenchmarkHarness = {}
 local runtimeConfigurations: {[string]: RuntimeConfig.Resolved} = {}
 
@@ -103,6 +104,7 @@ function BenchmarkHarness.GetRunOptions(scenarioName: string): RunOptions?
 			benchmarkQueryIndexMode = "both",
 			benchmarkSourceRevision = sourceRevision,
 			benchmarkActorCount = runtimeConfig.actorCount,
+			benchmarkCellMargin = Quantization.CELL_MARGIN,
 			benchmarkTargetActorJobMs = runtimeConfig.targetActorJobMs,
 		},
 		cameraCFrame = CFrame.lookAt(Vector3.new(0, 200, 700), Vector3.zero),
