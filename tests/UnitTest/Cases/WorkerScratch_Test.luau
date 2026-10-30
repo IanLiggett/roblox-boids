@@ -29,7 +29,7 @@ return function(t: UnitTest.Context): ()
 			buffer.writeu8(stats,index*16+3,1)
 			buffer.writeu8(stats,index*16+4,16)
 		end
-		handlers.NewBoidsStatsBatch({boidCount=160,data=stats,lifetimes=table.create(160,1)})
+		handlers.NewBoidsStatsBatch({groupId=1,boidCount=160,data=stats,lifetimes=table.create(160,1)})
 		handlers.NewGroupTarget(1,{Position=Vector3.new(1000,40,40)},1)
 		return core,handlers,clone
 	end

@@ -123,6 +123,19 @@ return function(): {hiddenMotion: number, hiddenWrites: number, mixedOwnership: 
 			task.wait()
 			assert(part(remoteGroup, ids[1]).LocalTransparencyModifier == 0, "Visible cell migration hid a replica")
 		until os.clock() >= untilTime
+		-- Frequent simulation snapshots must not wake an entire destination cell
+		-- when an already-visible row crosses into it between scheduled passes.
+		local slow = table.clone(originalGetActive())
+		slow.client = table.clone(slow.client)
+		slow.client.visibleRenderBands = {{range = math.huge, hertz = 0.1}}
+		local previousAnchor = (renderer.GetRenderedBoidState(ids[2]) :: renderer.RenderedBoidState).renderedAt
+		LODConfig.GetActive = function(): LODConfig.Config return slow end
+		waitFor(function(): boolean return (renderer.GetRenderedBoidState(ids[2]) :: renderer.RenderedBoidState).renderedAt ~= previousAnchor end)
+		local anchorAt = (renderer.GetRenderedBoidState(ids[2]) :: renderer.RenderedBoidState).renderedAt
+		publish(ids[1], point + Vector3.xAxis * 64)
+		task.wait(0.2)
+		assert((renderer.GetRenderedBoidState(ids[2]) :: renderer.RenderedBoidState).renderedAt == anchorAt, "Migration bypassed the destination cell's render cadence")
+		LODConfig.GetActive = originalGetActive
 		-- Repeated rotation must preserve visible replicas' opacity.
 		for _ = 1, 3 do
 			local inView = desired

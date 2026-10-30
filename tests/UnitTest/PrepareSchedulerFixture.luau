@@ -26,6 +26,7 @@ export type JobCell = {
  pages: Pages, pageCount: number, scheduledBoidCount: number, processedBoidCount: number, boidCount: number,
 }
 export type Job = {
+ correctionSampleRevision: number?,
  detailedMetrics: boolean, id: number, groupId: number, usesPath: boolean, jobCells: {JobCell},
  movedBoids: {[number]: {number | Vector3}}, cellCount: number, startTime: number,
  completionTime: number, simulationTick: number, estimatedCost: number, averageSight: number,
@@ -57,7 +58,7 @@ local workspace = environment.workspace
 local os = {clock = environment.Clock}
 local BoidStorage = environment.BoidStorage
 local RuntimeMetrics = environment.RuntimeMetrics
-local ResultCommit = environment.ResultCommit
+local ResultCommit = {Run = environment.ResultCommit.Run, GetCorrectionSampleRevision = function(): number? return nil end}
 local ViewerLOD = environment.ViewerLOD
 local ActorsInitializer = environment.ActorsInitializer
 local Schedulers = environment.Schedulers

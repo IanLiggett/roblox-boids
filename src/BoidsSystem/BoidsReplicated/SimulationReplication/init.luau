@@ -98,7 +98,6 @@ local clientStateExtension: ((string, unknown, unknown, unknown, unknown) -> ())
 
 local clientStarted = false
 local clientGroupsById: {[number]: Group} = {}
-local clientCorrections: CorrectionIntake.Intake? = nil
 SimulationReplication.clientStarted = false
 
 local function clonePath(path: {PathNode}): {PathNode}
@@ -359,11 +358,6 @@ function SimulationReplication.SetClientStateExtension(consume: (string, unknown
 	clientStateExtension = consume
 end
 
--- Independent values from the acceptance owner; diagnostics choose sample policy.
-function SimulationReplication.ForEachClientCorrection(observer: (number, Vector3, Vector3, number) -> ()): ()
- if clientCorrections then clientCorrections.ForEachAccepted(observer) end
-end
-
 local function sendFullState(player: Player): ()
 	local readState = assert(serverStateReader, "Server replay state reader is not registered")
 	simulationState:FireClient(player, "Begin")
@@ -505,7 +499,6 @@ function SimulationReplication.StartClient(boids: BoidsApi, renderPacketsDirectl
 	local pendingTargets: {[number]: ReplicatedTarget} = {}
 	local pendingSpawns: {[number]: PendingClientSpawn} = {}
 	local corrections: CorrectionIntake.Intake? = if renderPacketsDirectly then nil else CorrectionIntake.New(boids)
-	clientCorrections = corrections
 	local boidGroups: {[number]: number} = {}
 
 	local function applyTarget(groupId: number, target: ReplicatedTarget): ()
@@ -603,24 +596,25 @@ function SimulationReplication.StartClient(boids: BoidsApi, renderPacketsDirectl
 			end
 		elseif kind == "DeleteBoids" then
 			if type(a) == "table" then
+				if not renderPacketsDirectly then assert(corrections).Retire(a :: {number}, b :: number?) end
 				for _, boidId in a :: {number} do
 					if pendingSpawns[boidId] then boids.ReleaseServerBoidId(boidId) end
 					pendingSpawns[boidId], boidGroups[boidId] = nil, nil
-					if not renderPacketsDirectly then
-						assert(corrections).Retire(boidId, if type(b) == "number" then b else nil)
-					end
+
 					if boids.IsServerBoid(boidId) then boids.QueueDeleteBoid(boidId) end
 				end
 			end
 		elseif kind == "DestroyGroup" then
+			local retiredIds: {number} = {}
 			local group = groups[a :: number]
 			for id, groupId in boidGroups do
 				if groupId == a then
-					if not renderPacketsDirectly then assert(corrections).Retire(id, nil) end
+					table.insert(retiredIds, id)
 					if pendingSpawns[id] then boids.ReleaseServerBoidId(id) end
 					pendingSpawns[id], boidGroups[id] = nil, nil
 				end
 			end
+			if not renderPacketsDirectly then assert(corrections).Retire(retiredIds, nil) end
 			if group then
 				boids.DestroyGroup(group)
 				groups[a :: number] = nil

@@ -68,6 +68,7 @@ Current implementation
 - BoidsClient.BoidsRenderer is the sole active renderer.
 - It compiles visible render-band intervals and peripheral edge-distance scale per LOD preset, uses binary band selection per due cell, and schedules completed cells from their completion time. Cells moving toward the view center may be promoted immediately; peripheral demotions apply when their current interval completes.
 - Rendering is capped by client.maxRenderBoidsPerFrame. Dense cells retain a resume slot, and cells deferred for 0.5 seconds receive a bounded aging round-robin pre-pass before returning to normal near-first work; this prevents starvation without demoting nearby cells after their fairness slice.
+- Snapshot migration into an existing cell preserves its scheduled deadline unless the member needs an opacity change. Frequent local snapshots must not promote entire destination cells to snapshot cadence. New visible cells inherit an active migrant's motion clock rather than treating cell creation as suspension. Unchanged-cell intake checks existing bounds before allocating an origin/key; current time is sampled once per incoming cell buffer/packet, not per migrated row.
 - Continuous renderer/updater comparison paths are retired from the active package. User-owned backup content is not part of the active architecture.
 
 Renderer instrumentation and reporting (F08)

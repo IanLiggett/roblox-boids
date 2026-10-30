@@ -14,7 +14,7 @@ export type State = {
  counters: {[CounterName]: number},
  rings: {[string]: Ring},
 }
-local counterNames: {CounterName} = {"dispatchPumps", "dispatchPumpMs", "heartbeatDispatches", "completionDispatches", "timerDispatches", "dispatchBudgetStops", "dispatchNoActorStops", "dispatchNoDueStops", "scheduledJobs", "scheduledBoids", "completedJobs", "completedScheduledBoids", "processedBoids", "skippedBoids", "survivingBoids", "migratedBoids", "observedBoids", "returnedSourceBoids", "countMismatches", "timedOutJobs", "discardedJobs", "mergeFailures", "outstandingJobs", "peakOutstandingJobs", "workerExecutionMs", "workerSnapshotMs", "jobBuildMs", "dispatchMs", "resultHandlingMs", "mergeMs", "observerPreparationMs", "observerCallbacksMs", "snapshotDeliveryMs", "packetizationMs", "schedulerMs", "inboundDelayMs", "outboundDelayMs", "jobTurnaroundMs", "detailedJobs", "candidateExaminations", "acceptedDirectInteractions", "aggregateBucketVisits", "acceptedAggregatePopulation", "obstacleForwardRays", "obstacleEscapeRays", "obstacleDetourStarts", "obstacleDetourUpdates", "obstacleSoftFallbacks", "pages", "occupiedSlots", "inputBufferBytes", "outputBufferBytes", "correctionMessages"}
+local counterNames: {CounterName} = {"correctionIntakeMs", "correctionIntakePackets", "correctionIntakeRows", "dispatchPumps", "dispatchPumpMs", "heartbeatDispatches", "completionDispatches", "timerDispatches", "dispatchBudgetStops", "dispatchNoActorStops", "dispatchNoDueStops", "scheduledJobs", "scheduledBoids", "completedJobs", "completedScheduledBoids", "processedBoids", "skippedBoids", "survivingBoids", "migratedBoids", "observedBoids", "returnedSourceBoids", "countMismatches", "timedOutJobs", "discardedJobs", "mergeFailures", "outstandingJobs", "peakOutstandingJobs", "workerExecutionMs", "workerSnapshotMs", "jobBuildMs", "dispatchMs", "resultHandlingMs", "mergeMs", "observerPreparationMs", "observerCallbacksMs", "snapshotDeliveryMs", "packetizationMs", "schedulerMs", "inboundDelayMs", "outboundDelayMs", "jobTurnaroundMs", "detailedJobs", "candidateExaminations", "acceptedDirectInteractions", "aggregateBucketVisits", "acceptedAggregatePopulation", "obstacleForwardRays", "obstacleEscapeRays", "obstacleDetourStarts", "obstacleDetourUpdates", "obstacleSoftFallbacks", "pages", "occupiedSlots", "inputBufferBytes", "outputBufferBytes", "correctionMessages"}
 local latencyNames: {string} = {"workerExecutionMs", "jobTurnaroundMs", "inboundDelayMs", "outboundDelayMs", "frameMs", "actorReadyDelayMs", "cellOverdueMs"}
 
 function RuntimeMetrics.New(mode: Mode, capacity: number): State
@@ -54,6 +54,9 @@ end
 
 function RuntimeMetrics.Completed(state: State, m: WorkerMeasurement, turnaroundMs: number, inboundMs: number, outboundMs: number): ()
  local c = state.counters
+ c.correctionIntakeMs += m.correctionIntakeMs or 0
+ c.correctionIntakePackets += m.correctionIntakePackets or 0
+ c.correctionIntakeRows += m.correctionIntakeRows or 0
  c.outstandingJobs -= 1
  c.completedJobs += 1
  c.completedScheduledBoids += m.scheduledBoids

@@ -225,6 +225,7 @@ function BoidBatches.SendBatch(batch: BoidsStatsBatch): ()
 		lifetimes[row + 1] = batch.lifetimes[buffer.readu16(sendData, rowOffset(row))]
 	end
 	local actorBatch: ActorBoidsBatch = {
+		groupId = batch.groupId,
 		lifetimes = lifetimes,
 		boidCount = batch.boidCount,
 		data = sendData

@@ -149,6 +149,8 @@ Engine build detection does not call deprecated version(). Reports default studi
 to "unrecorded"; supply an externally recorded studioBuild through the existing
 benchmark metadata override when collecting reproducible measurements.
 
+Detailed correctionMessages counts raw-buffer Actor SendMessage calls, including buffers whose rows Actors subsequently reject. Filtering happens only in Actors. correctionIntakeMs, correctionIntakePackets and correctionIntakeRows are accumulated in each parallel correction callback and drained into its next successful job measurement. Rows count decoded rows, not unique or accepted boids; totals sum across all Actors. These callback times exclude boundary transfer and are separate from workerExecutionMs. Window boundaries can include delayed counter drainage. No second row scan is used for counting.
+
 Validation
 The test suite lives under ServerStorage.UnitTest; UnitTestRunner is disabled.
 To refresh the generated fixture in Edit mode:
@@ -182,3 +184,5 @@ PerformanceTelemetry exports networkErrorSelection window rates and per-recipien
 ## Cell visibility measurements
 
 Renderer Measurements distinguish scheduledBoids (all budgeted membership visits, including hide-only passes) from motionUpdates and transparencyWrites, with totals for both. transparencyWritesMax tracks the highest per-frame write count, bounded by visibilityCap. hiddenCells counts skipped cells; transitionCells covers pending binary opacity passes. Transparency counters cover render-step changes, not the initial hidden property assigned during spawn. RendererBenchmark exports these through its existing Workspace attribute sampler; no additional population scan or callback is installed. Read metrics through a normal client runtime or its exported attributes, not a separate tool VM's require cache.
+
+Worker divergence reports use simulation/job observations rather than a coordinator-wide correction scan. Exact first/second moments and maximum are retained; median fields/attributes are absent, not zero. Sampling revisions reject late job diagnostics after Stop/restart of a sampling window.

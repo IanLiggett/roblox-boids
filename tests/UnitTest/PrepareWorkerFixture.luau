@@ -23,10 +23,11 @@ export type Reply = {Fire: (Reply, Result?, number?, string?) -> ()}
 export type MessageReconciliationTarget = {boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number}
 export type Handlers = {
  NewJob: (Input, Reply, number, number) -> (),
- NewBoidsStatsBatch: ({boidCount: number, data: buffer, lifetimes: {number}}) -> (),
+ NewBoidsStatsBatch: ({groupId: number, boidCount: number, data: buffer, lifetimes: {number}}) -> (),
  NewGroupTarget: (number, SharedTypes.Target, number) -> (),
  NewGroupPath: (number, {SharedTypes.PathNode}, number, boolean, boolean, number, number) -> (),
- SetBoidReconciliationTargets: ({MessageReconciliationTarget}) -> (),
+ SetBoidReconciliationTargets: (buffer, number, number) -> (),
+ RetireCorrections: ({number}, number, number) -> (),
 }
 export type ActorDouble = {
  BindToMessageParallel: (ActorDouble, string, unknown) -> (),
@@ -50,6 +51,9 @@ local workspace = {
   return nil
  end,
 }
+local ActorCorrections = require(package.Boids.ActorCorrections)
+local CorrectionDivergence = require(package.CorrectionDivergence)
+local isClientWorker = true
 local WorkerCore = {}
 function WorkerCore.SetTestRaycastProvider(provider: RaycastProvider?): ()
  raycastProvider = provider

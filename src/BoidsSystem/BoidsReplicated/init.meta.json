@@ -7,6 +7,6 @@
   "attributes": {
     "ActiveBoidsScenario": "PolarSphereObstacle",
     "BoidSimulationMode": "both",
-    "BoidClientPresentationMode": "renderer"
+    "BoidClientPresentationMode": "simulation"
   }
 }

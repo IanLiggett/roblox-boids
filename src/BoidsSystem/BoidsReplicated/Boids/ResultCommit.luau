@@ -12,7 +12,11 @@ local Schedulers = require(script.Parent.Scheduler)
 local Cells = require(script.Parent.Cells)
 local ViewerLOD = require(script.Parent.JobBuilder.ViewerLOD)
 local Benchmarkers = require(BoidsReplicated.Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
+local CorrectionDivergence = require(BoidsReplicated.CorrectionDivergence)
 local ResultCommit = {}
+local correctionSampling = false
+local correctionRevision = 0
+local correctionSample = CorrectionDivergence.New()
 local metrics = RuntimeMetrics.State
 local detailedMetrics = metrics.mode == "detailed"
 type Group = SharedTypes.Group
@@ -285,6 +289,9 @@ function ResultCommit.Run(group: Group, actor: ActorState, job: Job, frameTick: 
 			for _, cell in job.jobCells do
 				if not mergedCells[cell.id] then return false end
 			end
+			if correctionSampling and job.correctionSampleRevision == correctionRevision and result.correctionDivergence then
+				CorrectionDivergence.Merge(correctionSample, result.correctionDivergence)
+			end
 			return true
 		end,
 		Retire = function(outcome: JobOutcome, completionTime: number?): ()
@@ -315,6 +322,20 @@ function ResultCommit.Run(group: Group, actor: ActorState, job: Job, frameTick: 
 	})
 end
 
+
+function ResultCommit.SetCorrectionSampling(enabled: boolean): ()
+	correctionSampling = enabled
+	correctionRevision += 1
+	correctionSample = CorrectionDivergence.New()
+end
+function ResultCommit.GetCorrectionSampleRevision(): number?
+	return if correctionSampling then correctionRevision else nil
+end
+function ResultCommit.ReadCorrectionSample(): CorrectionDivergence.Sample
+	local sample = correctionSample
+	correctionSample = CorrectionDivergence.New()
+	return sample
+end
 
 function ResultCommit.Start(registry: SharedTypes.GroupRegistry): ()
  assert(groups == nil or groups == registry, "Cannot replace coordinator registry")

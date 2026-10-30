@@ -25,100 +25,22 @@ return function(t: UnitTest.Context): ()
 		return network.ConvertSimulationSnapshotToPackets({cell})[1]
 	end
 
-	t.test("correction freshness, live lifetime and trusted malformed packet failures", function()
-		local live, deleting = true, false
-		local received: {Correction} = {}
-		local intake = intakeModule.New({
-			IsServerBoid = function(): boolean return live end,
-			IsDeletionPending = function(): boolean return deleting end,
-			SetReconciliationTargets = function(data: buffer, snapshotTime: number, accept: (number, Vector3, Vector3, number) -> boolean): ()
-				for offset, ox, oy, oz, count in network.ForEachCellHeader(data) do
-					for id, px, py, pz, vx, vy, vz in network.ForEachBoid(data, offset, count) do
-						local position, velocity = Vector3.new(ox+px, oy+py, oz+pz), Vector3.new(vx, vy, vz)
-						if accept(id, position, velocity, snapshotTime) then
-							table.insert(received, {boidId=id, position=position, velocity=velocity, snapshotTime=snapshotTime})
-						end
-					end
-				end
-			end,
-		})
-		local data = packet(7)
-		intake.Consume(data, 10)
-		intake.Consume(data, 9)
-		intake.Consume(data, 10)
-		t.expect.equal(#received, 1)
-		intake.Consume(data, 11)
-		t.expect.equal(#received, 2)
-		live = false
-		intake.Consume(data, 12)
-		live, deleting = true, true
-		intake.Consume(data, 12)
-		t.expect.equal(#received, 2)
-		deleting = false
-		intake.Retire(7, 12)
-		intake.Consume(data, 11)
-		intake.Consume(data, 12)
-		intake.Consume(data, 13)
-		t.expect.equal(#received, 3)
-		t.expect.equal(received[3].snapshotTime, 13)
-		intake.Consume(data, 0/0)
-		intake.Consume(data, math.huge)
-		-- The trusted-layout decoder can ignore an empty headerless payload;
-		-- truncated rows may throw and have no recovery guarantee.
-		intake.Consume(buffer.create(1), 14)
-		local truncated = buffer.create(buffer.len(data) - 1)
-		buffer.copy(truncated, 0, data, 0, buffer.len(truncated))
-		t.expect.throws(function(): () intake.Consume(truncated, 14) end)
-		t.expect.equal(#received, 3)
-		intake.Consume(data, 14)
-		t.expect.equal(#received, 4)
-	end)
-
-	t.test("correction duplicates in one packet only reach steering once", function()
-		local calls = 0
-		local cell = network.NewCellSnapshot(2, Vector3.zero)
-		network.AppendBoid(cell, 7, Vector3.one, Vector3.zero)
-		network.AppendBoid(cell, 7, Vector3.one * 2, Vector3.zero)
-		local intake = intakeModule.New({
-			IsServerBoid = function(): boolean return true end,
-			IsDeletionPending = function(): boolean return false end,
-			SetReconciliationTargets = function(data: buffer, snapshotTime: number, accept: (number, Vector3, Vector3, number) -> boolean): ()
-				for offset, _ox, _oy, _oz, count in network.ForEachCellHeader(data) do
-					for id in network.ForEachBoid(data, offset, count) do
-						if accept(id, Vector3.zero, Vector3.zero, snapshotTime) then calls += 1 end
-					end
-				end
-			end,
-		})
-		intake.Consume(network.ConvertSimulationSnapshotToPackets({cell})[1], 1)
-		t.expect.equal(calls, 1)
-	end)
-
-	t.test("client-local ownership rejects corrections across the full u16 range", function()
-		local isServer = false
-		local calls = 0
-		local intake = intakeModule.New({
-			IsServerBoid = function(): boolean return isServer end,
-			IsDeletionPending = function(): boolean return false end,
-			SetReconciliationTargets = function(data: buffer, snapshotTime: number, accept: (number, Vector3, Vector3, number) -> boolean): ()
-				for offset, _ox, _oy, _oz, count in network.ForEachCellHeader(data) do
-					for id in network.ForEachBoid(data, offset, count) do
-						if accept(id, Vector3.zero, Vector3.zero, snapshotTime) then calls += 1 end
-					end
-				end
-			end,
-		})
-		intake.Consume(packet(0), 1)
-		intake.Consume(packet(65535), 1)
-		t.expect.equal(calls, 0)
-		isServer = true
-		intake.Consume(packet(65535), 2)
-		t.expect.equal(calls, 1)
-		intake.Retire(65535, 3)
-		isServer = false
-		intake.Consume(packet(65535), 4)
-		t.expect.equal(calls, 1)
-	end)
+	t.test("correction relay forwards the original trusted buffer without a row walk", function()
+        local data = buffer.create(1)
+        local received: buffer? = nil
+        local time = 0
+        local retired = 0
+        local intake = intakeModule.New({
+            SetReconciliationTargets = function(packet: buffer, sourceTime: number): () received=packet;time=sourceTime end,
+            RetireReconciliationTargets = function(ids: {number}, cutoff: number?): () retired=ids[1];time=cutoff or 0 end,
+        })
+        intake.Consume(data, 12)
+        t.expect.equal(received, data)
+        t.expect.equal(time, 12)
+        intake.Retire({7}, 13)
+        t.expect.equal(retired, 7)
+        t.expect.equal(time, 13)
+    end)
 
 	t.test("replay uses settled pose, preserves recipes and excludes retired state", function()
 		local recipe: {id: number, position: Vector3, velocity: Vector3, maxSpeed: number, model: number} = {id=1, position=Vector3.zero, velocity=Vector3.zero, maxSpeed=20, model=0}

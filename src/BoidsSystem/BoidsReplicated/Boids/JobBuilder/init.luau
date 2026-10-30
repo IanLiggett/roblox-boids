@@ -73,6 +73,7 @@ local function buildJob(group: Group, currentTick: number, targetCost: number, f
 
 	local now: number = workspace:GetServerTimeNow()
 	local job: Job = {
+		correctionSampleRevision = ResultCommit.GetCorrectionSampleRevision(),
 		detailedMetrics = detailedMetrics,
 		id = nextJobId,
 		groupId = group.id,

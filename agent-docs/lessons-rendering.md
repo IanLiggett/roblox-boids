@@ -1,5 +1,23 @@
 # Rendering Lessons
 
+[RENDERING] Snapshot migration must preserve render cadence
+
+Tags: rendering, simulation mode, snapshot intake, cell migration, deadline, LOD, CPU
+
+Rejected
+
+Setting an existing destination cell's nextDueTime to the current time whenever any snapshot row migrates into it.
+
+Reason
+
+Client simulation publishes frequent local snapshots. Ordinary cell crossings then trigger repeated full-cell render passes independently of configured render LOD. A 20k moving-membership probe produced 2.18 million render updates in six seconds, versus 341k after preserving deadlines.
+
+Current guardrail
+
+Preserve existing deadlines for ordinary visible migration; only opacity changes require urgent membership work. Inherit active motion clocks for visible migrants entering new cells. Verify that migrating into a settled cell leaves an existing member's renderedAt unchanged until its scheduled pass. Profile live moving snapshot intake; static visibility tests do not exercise this failure.
+
+---
+
 [RENDERING] Hidden intervals must not become catch-up movement
 
 Tags: rendering, visibility, culling, distance fade, prediction, snapshot age, resume

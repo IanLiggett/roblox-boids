@@ -18,23 +18,13 @@ local Divergence = require(script.Divergence)
 local PerformanceTelemetry = {}
 type RuntimeMetrics = SharedTypes.RuntimeMetrics
 type BoidsApi = {
+	SetCorrectionSampling: (boolean) -> (),
 	GetRuntimeMetrics: (sinceTotals: {[string]: number}?) -> RuntimeMetrics,
 	GetRuntimeSummary: () -> SharedTypes.RuntimeSummary,
 	GetRuntimeDiagnostics: () -> SharedTypes.RuntimeDiagnostics,
 }
 
-type Divergence = {
-	sampleCount: number,
-	positionRmse: number,
-	velocityRmse: number,
-	maxPositionError: number,
-	positionAverage: number,
-	positionMedian: number,
-	positionStandardDeviation: number,
-	velocityAverage: number,
-	velocityMedian: number,
-	velocityStandardDeviation: number,
-}
+type Divergence = Divergence.Report
 
 type DivergenceSample = Divergence.Sample
 
@@ -194,12 +184,8 @@ function PerformanceTelemetry.Start(
 		local sendSamples: {number} = {}
 		local receiveSamples: {number} = {}
 
-		local divergenceSampleCount = 0
-		local divergencePositionSquared = 0
-		local divergenceVelocitySquared = 0
-		local divergenceMaxPosition = 0
-		local positionErrors: {number} = {}
-		local velocityErrors: {number} = {}
+		local divergenceTotal = Divergence.New()
+		if divergenceProvider then boids.SetCorrectionSampling(true) end
 
 		local sampleStart = os.clock()
 		local sampleEnd = sampleStart + sampleSeconds
@@ -222,17 +208,7 @@ function PerformanceTelemetry.Start(
 			if readDivergence then
 				local divergence = readDivergence()
 				if divergence then
-					local count = divergence.sampleCount
-					divergenceSampleCount += count
-					divergencePositionSquared += divergence.positionRmse * divergence.positionRmse * count
-					divergenceVelocitySquared += divergence.velocityRmse * divergence.velocityRmse * count
-					divergenceMaxPosition = math.max(divergenceMaxPosition, divergence.maxPositionError)
-					for _, positionError in divergence.positionErrors do
-						table.insert(positionErrors, positionError)
-					end
-					for _, velocityError in divergence.velocityErrors do
-						table.insert(velocityErrors, velocityError)
-					end
+					Divergence.Merge(divergenceTotal, divergence)
 				end
 			end
 
@@ -242,18 +218,13 @@ function PerformanceTelemetry.Start(
 		local elapsed = math.max(os.clock() - sampleStart, 0.001)
 		local endMetrics = boids.GetRuntimeMetrics(startMetrics.latencyTotals)
 		local endTransportMetrics = TransportMetrics.Read()
-		local divergence = if divergenceSampleCount > 0 then {
-			sampleCount = divergenceSampleCount,
-			positionRmse = math.sqrt(divergencePositionSquared / divergenceSampleCount),
-			velocityRmse = math.sqrt(divergenceVelocitySquared / divergenceSampleCount),
-			maxPositionError = divergenceMaxPosition,
-			positionAverage = mean(positionErrors) :: number,
-			positionMedian = median(positionErrors) :: number,
-			positionStandardDeviation = standardDeviation(positionErrors, mean(positionErrors)) :: number,
-			velocityAverage = mean(velocityErrors) :: number,
-			velocityMedian = median(velocityErrors) :: number,
-			velocityStandardDeviation = standardDeviation(velocityErrors, mean(velocityErrors)) :: number,
-		} else nil
+		if divergenceProvider then
+			local last = divergenceProvider()
+			if last then Divergence.Merge(divergenceTotal, last) end
+			boids.SetCorrectionSampling(false)
+		end
+		local divergence = Divergence.Read(divergenceTotal)
+
 
 		local counterDeltas: {[SharedTypes.RuntimeCounterName]: number} = {}
 		local elapsedRates: {[string]: number} = {}

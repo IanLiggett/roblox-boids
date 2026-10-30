@@ -5,6 +5,7 @@ local StatsCodec = {}
 StatsCodec.ROW_BYTES = 16
 
 export type ActorBoidsBatch = {
+	groupId: number,
 	lifetimes: {number},
 	boidCount: number,
 	data: buffer,

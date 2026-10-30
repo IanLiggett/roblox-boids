@@ -1,55 +1,25 @@
 --!strict
--- Testing-owned time-aligned comparison, never renderer correction or scheduling.
+-- Exact moments over worker/job samples. Medians require retaining individual
+-- errors; they are intentionally unavailable without a per-boid diagnostic copy.
+local Aggregate = require(script.Parent.Parent.Parent.CorrectionDivergence)
 local Divergence = {}
-export type Sample = {
-	sampleCount: number,
-	positionRmse: number,
-	velocityRmse: number,
-	maxPositionError: number,
-	positionErrors: {number},
-	velocityErrors: {number},
+export type Sample = Aggregate.Sample
+export type Report = {
+ sampleCount: number, sampling: string, positionRmse: number, velocityRmse: number,
+ maxPositionError: number, positionAverage: number, velocityAverage: number,
+ positionStandardDeviation: number, velocityStandardDeviation: number,
+ positionMedian: number?, velocityMedian: number?,
 }
-
-type Corrections = ((number, Vector3, Vector3, number) -> ()) -> ()
-type StateReader = (number) -> (Vector3?, Vector3?)
-function Divergence.Read(forEachCorrection: Corrections, readState: StateReader, now: number): Sample?
-	local sampleCount = 0
-	local positionErrorSquared = 0
-	local velocityErrorSquared = 0
-	local maxPositionError = 0
-	local positionErrors: {number} = {}
-	local velocityErrors: {number} = {}
-
-	forEachCorrection(function(boidId: number, targetPosition: Vector3, targetVelocity: Vector3, snapshotTime: number)
-		local age = now - snapshotTime
-		if age >= 0 and age <= 3 then
-			local position, velocity = readState(boidId)
-			if position and velocity then
-				local expectedPosition = targetPosition + targetVelocity * age
-				local positionError = (position - expectedPosition).Magnitude
-				local velocityError = (velocity - targetVelocity).Magnitude
-				positionErrorSquared += positionError * positionError
-				velocityErrorSquared += velocityError * velocityError
-				maxPositionError = math.max(maxPositionError, positionError)
-				table.insert(positionErrors, positionError)
-				table.insert(velocityErrors, velocityError)
-				sampleCount += 1
-			end
-		end
-	end)
-
-	if sampleCount == 0 then
-		return nil
-	end
-
-	return {
-		sampleCount = sampleCount,
-		positionRmse = math.sqrt(positionErrorSquared / sampleCount),
-		velocityRmse = math.sqrt(velocityErrorSquared / sampleCount),
-		maxPositionError = maxPositionError,
-		positionErrors = positionErrors,
-		velocityErrors = velocityErrors,
-	}
+Divergence.New = Aggregate.New
+Divergence.Merge = Aggregate.Merge
+function Divergence.Read(sample: Sample): Report?
+ local n = sample.sampleCount
+ if n == 0 then return nil end
+ local p, v = sample.positionSum / n, sample.velocitySum / n
+ return {sampleCount = n, sampling = "worker-jobs", positionRmse = math.sqrt(sample.positionSquared / n),
+  velocityRmse = math.sqrt(sample.velocitySquared / n), maxPositionError = sample.maxPositionError,
+  positionAverage = p, velocityAverage = v,
+  positionStandardDeviation = math.sqrt(math.max(0, sample.positionSquared / n - p*p)),
+  velocityStandardDeviation = math.sqrt(math.max(0, sample.velocitySquared / n - v*v))}
 end
-
 return Divergence

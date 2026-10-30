@@ -48,7 +48,7 @@ return function(t: UnitTest.Context): ()
 				buffer.writeu8(batch, offset + 10, spec.cohesion or 0)
 				buffer.writeu8(batch, offset + 11, spec.targetBias or 0)
 			end
-			handlers.NewBoidsStatsBatch({ boidCount = count, data = batch, lifetimes = table.create(count, 1) })
+			handlers.NewBoidsStatsBatch({groupId=1, boidCount = count, data = batch, lifetimes = table.create(count, 1) })
 			local pages: {SharedTypes.Page} = {}
 			for start = 1, count, 64 do
 				local size = math.min(64, count - start + 1)

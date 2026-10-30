@@ -221,6 +221,7 @@ local function fixture(renderPacketsDirectly: boolean?)
 		for id, owner in live do if owner == "server" then boids.QueueDeleteBoid(id) end end
 	end
 	function boids.SetReconciliationTargets(...: unknown): () end
+	function boids.RetireReconciliationTargets(...: unknown): () end
 	local retirements: {[number]: number} = {}
 	local correction = {New = function() return {
 		Retire = function(id: number, cutoff: number?): () retirements[id] = cutoff or 0 end,

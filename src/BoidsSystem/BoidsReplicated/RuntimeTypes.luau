@@ -54,9 +54,12 @@ export type Replication = {
 	IsDeletionPending: (number) -> boolean,
 	IsGroupRetiring: (number) -> boolean,
 	DestroyGroup: (Group) -> (),
-	SetReconciliationTargets: (buffer, number, (number, Vector3, Vector3, number) -> boolean) -> (),
+	SetReconciliationTargets: (buffer, number) -> (),
+	RetireReconciliationTargets: ({number}, number?) -> (),
 }
 export type Api = Replication & ClientObservation & IndexSource & {
+	SetCorrectionSampling: (boolean) -> (),
+	ReadCorrectionSample: () -> SharedTypes.CorrectionDivergenceSample,
 	SetLODPreset: ("low" | "medium" | "high") -> boolean,
 	GetRuntimeMetrics: ({[string]: number}?) -> SharedTypes.RuntimeMetrics,
 	GetRuntimeSummary: () -> SharedTypes.RuntimeSummary,

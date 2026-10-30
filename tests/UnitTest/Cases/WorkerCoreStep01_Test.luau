@@ -31,7 +31,14 @@ return function(t: UnitTest.Context): ()
    end
    if reconciliationBatches then
     for _, targets in reconciliationBatches do
-     handlers.SetBoidReconciliationTargets(targets)
+     for _, target in targets do
+      local codec=require(package.NetworkResults.PacketCodec)
+      local q=require(package.Quantization)
+      local x,y,z=q.ConvertCoordsToGrid(target.position.X,target.position.Y,target.position.Z)
+      local cell=codec.NewCellSnapshot(1,Vector3.new(x,y,z))
+      codec.AppendBoid(cell,target.boidId,target.position-cell.origin,target.velocity)
+      handlers.SetBoidReconciliationTargets(codec.ConvertSimulationSnapshotToPackets({cell})[1],target.snapshotTime,target.lifetime)
+     end
     end
    end
    local stats=buffer.create(count*16)
@@ -41,7 +48,7 @@ return function(t: UnitTest.Context): ()
     buffer.writeu8(stats,i*16+2,20);buffer.writeu8(stats,i*16+3,1)
     buffer.writeu8(stats,i*16+4,16)
    end
-   handlers.NewBoidsStatsBatch({boidCount=registered,data=stats,lifetimes=table.create(registered,lifetime)})
+   handlers.NewBoidsStatsBatch({groupId=1,boidCount=registered,data=stats,lifetimes=table.create(registered,lifetime)})
    local pages: {SharedTypes.Page} = {}
    local tickDelta = if elapsedTicks == nil then (if migrate then 60 else 0) else elapsedTicks
    for start=0,math.max(count-1,0),64 do

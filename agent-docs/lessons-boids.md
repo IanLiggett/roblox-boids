@@ -218,4 +218,21 @@ Per-item materialization adds table writes, allocations, garbage-collection pres
 
 Current guardrail
 
-Preserve packet validation, accepted-ID/time ordering, and lifetime checks. In server hot paths, keep buffer-backed data packed across internal APIs. On the client, unpack incoming buffers into reusable tables only when those tables will persist through many subsequent reads or writes; the initial unpack pays the same slower buffer-read cost as direct use, so include that cost and expected reuse when deciding. When changing an established interface, present the specific boundary and expected cost to the owner for review first. Hoist loop-invariant lengths and lookups out of hot loops when their values remain valid for the loop's lifetime.
+Trust server-authored correction packet layout; preserve source ordering and lifecycle fences in the same Actor decoding pass without a validation traversal. In server hot paths, keep buffer-backed data packed across internal APIs. On the client, unpack incoming buffers into reusable tables only when those tables will persist through many subsequent reads or writes; the initial unpack pays the same slower buffer-read cost as direct use, so include that cost and expected reuse when deciding. When changing an established interface, present the specific boundary and expected cost to the owner for review first. Hoist loop-invariant lengths and lookups out of hot loops when their values remain valid for the loop's lifetime.
+
+
+[PERFORMANCE] Decode correction buffers inside parallel Actor handlers
+
+Tags: correction, Actor, parallel, buffer, lifetime, stable tables, telemetry
+
+Rejected
+
+Decoding on the coordinator into per-boid tables, maintaining a diagnostic mirror, and copying those tables into serial Actor callbacks that allocate replacement targets.
+
+Reason
+
+High correction rates amplify per-row allocations and table serialization across the entire pool. A change of execution phase inside an Actor does not require copying its Lua tables.
+
+Current guardrail
+
+Forward the original buffer with source time and a scalar lifetime ceiling, then decode once per Actor using BindToMessageParallel into stable records. Carry ownership and retirement metadata on lifecycle controls. Keep heavy batch/control handlers parallel and non-yielding; source/order gates occur in the decode pass. Diagnostic worker moments travel with existing results; do not rebuild a coordinator correction mirror for telemetry. Keep at least eight client Actors; the validated pool uses sixteen.

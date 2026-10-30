@@ -37,10 +37,11 @@ export type Reply = {Fire: (Reply, Result?, number?, string?) -> ()}
 export type MessageReconciliationTarget = {boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number}
 export type Handlers = {
  NewJob: (Input, Reply, number, number) -> (),
- NewBoidsStatsBatch: ({boidCount: number, data: buffer, lifetimes: {number}}) -> (),
+ NewBoidsStatsBatch: ({groupId: number, boidCount: number, data: buffer, lifetimes: {number}}) -> (),
  NewGroupTarget: (number, SharedTypes.Target, number) -> (),
  NewGroupPath: (number, {SharedTypes.PathNode}, number, boolean, boolean, number, number) -> (),
- SetBoidReconciliationTargets: ({MessageReconciliationTarget}) -> (),
+ SetBoidReconciliationTargets: (buffer, number, number) -> (),
+ RetireCorrections: ({number}, number, number) -> (),
 }
 export type ActorDouble = {
  BindToMessageParallel: (ActorDouble, string, unknown) -> (),
@@ -64,6 +65,9 @@ local workspace = {
   return nil
  end,
 }
+local ActorCorrections = require(package.Boids.ActorCorrections)
+local CorrectionDivergence = require(package.CorrectionDivergence)
+local isClientWorker = true
 local WorkerCore = {}
 function WorkerCore.SetTestRaycastProvider(provider: RaycastProvider?): ()
  raycastProvider = provider
@@ -136,12 +140,10 @@ local VEL_Z_OFFSET = BoidStorage.VEL_Z_OFFSET
 local SPEED_OFFSET = BoidStorage.SPEED_OFFSET
 
 -- add repulsion threshold and scaling stats that other boids multiply their avoidance by to affect how strongly they avoid this boid
-type ReconciliationTarget = {
-	position: Vector3,
-	velocity: Vector3,
-	snapshotTime: number,
-	expiresAt: number,
-}
+type ReconciliationTarget = {read position: Vector3, read velocity: Vector3, read snapshotTime: number, read expiresAt: number}
+-- Server workers never receive client corrections; share their immutable inert
+-- target instead of allocating correction ownership records for every boid.
+local inertReconciliation: ReconciliationTarget = table.freeze({position = Vector3.zero, velocity = Vector3.zero, snapshotTime = 0, expiresAt = 0})
 
 type BoidStats = {
 	maxSpeed:number,
@@ -185,13 +187,13 @@ local globalGravityWells: {[number]: GravityWell} = {}
 local groupGravityWells: {[number]: {[number]: GravityWell}} = {}
 
 local globalBoidsStats:{[number]:BoidStats} = {}
-local pendingReconciliationTargets: {[number]: ReconciliationTarget} = {}
+local correctionState: ActorCorrections.State = {}
+local correctionIntakeMs, correctionIntakePackets, correctionIntakeRows = 0, 0, 0
 
 -- Lifecycle tokens are process-local metadata, separate from packed simulation
 -- rows/codecs. Tombstones prevent delayed stats/control messages reviving caches.
 local retiredBoids: {[number]: number} = {}
 local statsLifetimes: {[number]: number} = {}
-local pendingTargetLifetimes: {[number]: number} = {}
 local groupLifetimes: {[number]: number} = {}
 local retiredGroups: {[number]: number} = {}
 local function acceptGroupLifetime(groupId: number, lifetime: number): boolean
@@ -311,7 +313,6 @@ local MAX_SEEN = 20
 
 -- Snapshot reconciliation is data-driven rather than a simulation mode. Every
 -- boid has an inert target record, so this adds no per-boid mode branch.
-local RECONCILIATION_EXPIRY_SECONDS = 6
 local RECONCILIATION_POSITION_GAIN = 0.45
 local RECONCILIATION_VELOCITY_GAIN = 1.1
 
@@ -662,6 +663,7 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 		inputBufferBytes = 0,
 		outputBufferBytes = 0,
 	}
+	local divergence = if job.correctionSampleRevision then CorrectionDivergence.New() else nil
 	local snapshotStart = 0
 	
 	debug.profilebegin("Boids.WorkerCore.RunJob")
@@ -1068,6 +1070,9 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 			-- A server packet sets this target outside the hot job path. Its
 			-- expiry weight makes the default target inert without a mode branch.
 			reconciliationTarget = boidStats.reconciliation
+			if divergence then
+				CorrectionDivergence.Observe(divergence, origin + position, velocity, reconciliationTarget.position, reconciliationTarget.velocity, reconciliationTarget.snapshotTime, jobTime)
+			end
 			reconciliationWeight = math.clamp(reconciliationTarget.expiresAt - jobTime, 0, 1)
 			reconciliationPosition = reconciliationTarget.position
 				+ reconciliationTarget.velocity * math.max(jobTime - reconciliationTarget.snapshotTime, 0)
@@ -1321,6 +1326,11 @@ local function runJob(job: Job, bindableEvent: BindableEvent, frameTick: number,
 			for _, cell in snapshot do measurement.outputBufferBytes += buffer.len(cell.networkBoids) end
 		end
 	end
+	job.correctionDivergence = divergence
+	measurement.correctionIntakeMs = correctionIntakeMs
+	measurement.correctionIntakePackets = correctionIntakePackets
+	measurement.correctionIntakeRows = correctionIntakeRows
+	correctionIntakeMs, correctionIntakePackets, correctionIntakeRows = 0, 0, 0
 	job.measurement = measurement
 	job.snapshotGroups = snapshotGroups
 	job.neighborIterations = neighborIterations
@@ -1344,24 +1354,18 @@ actor:BindToMessageParallel("NewJob", function(job: Job, reply: BindableEvent, f
 	end
 end)
 
-actor:BindToMessage("NewBoidsStatsBatch", function(batch:ActorBoidsBatch): ()
+actor:BindToMessageParallel("NewBoidsStatsBatch", function(batch:ActorBoidsBatch): ()
 	local data: buffer = batch.data
+	local isReplica = batch.groupId < 32768
 	
 	local boidId:number, maxSpeed:number, minSpeed:number, sight:number, avoidance:number, separation:number,  repulsion:number, repulsionStrength:number, alignment:number, cohesion:number, targetBias:number
 	for index: number = 0, batch.boidCount - 1 do
 		boidId, maxSpeed, minSpeed, sight, avoidance, separation, repulsion, repulsionStrength, alignment, cohesion, targetBias = StatsCodec.ReadBoidRow(data, index)
 		
-		local lifetime = assert(batch.lifetimes[index + 1], "Missing boid lifetime")
-		if lifetime <= (retiredBoids[boidId] or -1) or lifetime < (statsLifetimes[boidId] or -1) or lifetime < (pendingTargetLifetimes[boidId] or -1) then continue end
-		local pending = if pendingTargetLifetimes[boidId] == lifetime then pendingReconciliationTargets[boidId] else nil
-		local current = if statsLifetimes[boidId] == lifetime then globalBoidsStats[boidId] else nil
-		local reconciliation = pending or (if current then current.reconciliation else nil) or {
-			position = Vector3.zero,
-			velocity = Vector3.zero,
-			snapshotTime = 0,
-			expiresAt = 0,
-		}
-		pendingReconciliationTargets[boidId], pendingTargetLifetimes[boidId] = nil, nil
+		local lifetime = batch.lifetimes[index + 1]
+		if lifetime <= (retiredBoids[boidId] or -1) or lifetime < (statsLifetimes[boidId] or -1) then continue end
+		local reconciliation = if isClientWorker then ActorCorrections.Register(correctionState, boidId, lifetime, isReplica) else inertReconciliation
+		if not reconciliation then continue end
 		statsLifetimes[boidId] = lifetime
 
 		globalBoidsStats[boidId] = {
@@ -1380,34 +1384,25 @@ actor:BindToMessage("NewBoidsStatsBatch", function(batch:ActorBoidsBatch): ()
 	end
 end)
 
-local function setReconciliationTarget(boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number): ()
-	if lifetime <= (retiredBoids[boidId] or -1) or lifetime < (statsLifetimes[boidId] or -1) or lifetime < (pendingTargetLifetimes[boidId] or -1) then return end
-	local boidStats = globalBoidsStats[boidId]
-	local current = if boidStats and statsLifetimes[boidId] == lifetime then boidStats.reconciliation
-		elseif pendingTargetLifetimes[boidId] == lifetime then pendingReconciliationTargets[boidId] else nil
-	-- Preserve accepted ordering even if Actor controls arrive around stats setup.
-	if current and snapshotTime <= current.snapshotTime then return end
-	local target: ReconciliationTarget = { position = position, velocity = velocity, snapshotTime = snapshotTime, expiresAt = snapshotTime + RECONCILIATION_EXPIRY_SECONDS }
-	if boidStats and statsLifetimes[boidId] == lifetime then
-		boidStats.reconciliation = target
-	else
-		pendingReconciliationTargets[boidId], pendingTargetLifetimes[boidId] = target, lifetime
-	end
-end
-
-actor:BindToMessage("SetBoidReconciliationTarget", setReconciliationTarget)
-actor:BindToMessage("SetBoidReconciliationTargets", function(targets: {{boidId: number, position: Vector3, velocity: Vector3, snapshotTime: number, lifetime: number}}): ()
-	for _, target in targets do
-		setReconciliationTarget(target.boidId, target.position, target.velocity, target.snapshotTime, target.lifetime)
-	end
+actor:BindToMessageParallel("SetBoidReconciliationTargets", function(packet: buffer, sourceTime: number, lifetimeCeiling: number): ()
+	debug.profilebegin("Boids.CorrectionIntakeParallel")
+	local started = os.clock()
+	local rows = ActorCorrections.Consume(correctionState, packet, sourceTime, lifetimeCeiling)
+	correctionIntakeMs += (os.clock() - started) * 1000
+	correctionIntakePackets += 1
+	correctionIntakeRows += rows
+	debug.profileend()
+end)
+actor:BindToMessageParallel("RetireCorrections", function(ids: {number}, lifetimeCeiling: number, cutoff: number): ()
+	for _, id in ids do ActorCorrections.Retire(correctionState, id, lifetimeCeiling, cutoff) end
 end)
 
-actor:BindToMessage("NewGroupTarget", function(groupId:number, target:Target, lifetime: number): ()
+actor:BindToMessageParallel("NewGroupTarget", function(groupId:number, target:Target, lifetime: number): ()
 	if not acceptGroupLifetime(groupId, lifetime) then return end
 	groupTargets[groupId] = target
 end)
 
-actor:BindToMessage("NewGroupPath", function(
+actor:BindToMessageParallel("NewGroupPath", function(
 	groupId: number,
 	path: {PathNode},
 	pathId: number,
@@ -1426,15 +1421,15 @@ actor:BindToMessage("NewGroupPath", function(
 	}
 end)
 
-actor:BindToMessage("NewGlobalGravityWell", function(gravityWell: GravityWell): ()
+actor:BindToMessageParallel("NewGlobalGravityWell", function(gravityWell: GravityWell): ()
 	globalGravityWells[gravityWell.id] = gravityWell
 end)
 
-actor:BindToMessage("RemoveGlobalGravityWell", function(gravityWellId: number): ()
+actor:BindToMessageParallel("RemoveGlobalGravityWell", function(gravityWellId: number): ()
 	globalGravityWells[gravityWellId] = nil
 end)
 
-actor:BindToMessage("NewGroupGravityWell", function(groupId: number, gravityWell: GravityWell, lifetime: number): ()
+actor:BindToMessageParallel("NewGroupGravityWell", function(groupId: number, gravityWell: GravityWell, lifetime: number): ()
 	if not acceptGroupLifetime(groupId, lifetime) then return end
 	local wells = groupGravityWells[groupId]
 	if not wells then
@@ -1444,7 +1439,7 @@ actor:BindToMessage("NewGroupGravityWell", function(groupId: number, gravityWell
 	wells[gravityWell.id] = gravityWell
 end)
 
-actor:BindToMessage("RemoveGroupGravityWell", function(groupId: number, gravityWellId: number, lifetime: number): ()
+actor:BindToMessageParallel("RemoveGroupGravityWell", function(groupId: number, gravityWellId: number, lifetime: number): ()
 	if not acceptGroupLifetime(groupId, lifetime) then return end
 	local wells = groupGravityWells[groupId]
 	if not wells then
@@ -1456,20 +1451,18 @@ actor:BindToMessage("RemoveGroupGravityWell", function(groupId: number, gravityW
 	end
 end)
 
-actor:BindToMessage("RetireBoids", function(retirements: {{boidId: number, lifetime: number}}): ()
+actor:BindToMessageParallel("RetireBoids", function(retirements: {{boidId: number, lifetime: number}}): ()
 	for _, retirement in retirements do
 		local id, lifetime = retirement.boidId, retirement.lifetime
 		retiredBoids[id] = math.max(retiredBoids[id] or -1, lifetime)
 		if (statsLifetimes[id] or -1) <= lifetime then
 			globalBoidsStats[id], statsLifetimes[id] = nil, nil
 		end
-		if (pendingTargetLifetimes[id] or -1) <= lifetime then
-			pendingReconciliationTargets[id], pendingTargetLifetimes[id] = nil, nil
-		end
+		ActorCorrections.Retire(correctionState, id, lifetime, -math.huge)
 	end
 end)
 
-actor:BindToMessage("RetireGroup", function(groupId: number, lifetime: number): ()
+actor:BindToMessageParallel("RetireGroup", function(groupId: number, lifetime: number): ()
 	retiredGroups[groupId] = math.max(retiredGroups[groupId] or -1, lifetime)
 	if (groupLifetimes[groupId] or -1) <= lifetime then
 		groupTargets[groupId], groupPaths[groupId], groupGravityWells[groupId], groupLifetimes[groupId] = nil, nil, nil, nil

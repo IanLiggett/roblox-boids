@@ -263,10 +263,20 @@ local function updateRenderCellIndex(boidId: number, previousIndex: number, next
 	cell.slotByRenderIndex[nextIndex] = slot
 end
 
-local function assignBoidToRenderCell(boidId: number, position: Vector3): ()
+local function assignBoidToRenderCell(boidId: number, position: Vector3, now: number): ()
 	local renderIndex: number? = renderIndexByBoid[boidId]
 	if not renderIndex then
 		return
+	end
+	local previousKey = renderCellKeyByBoid[boidId]
+	local previousCell = if previousKey then renderCellsByKey[previousKey] else nil
+	if previousCell then
+		local origin = previousCell.origin
+		if position.X >= origin.X and position.X < origin.X + RENDER_CELL_SIZE
+			and position.Y >= origin.Y and position.Y < origin.Y + RENDER_CELL_SIZE
+			and position.Z >= origin.Z and position.Z < origin.Z + RENDER_CELL_SIZE then
+			return
+		end
 	end
 
 	local origin: Vector3 = Vector3.new(
@@ -278,13 +288,10 @@ local function assignBoidToRenderCell(boidId: number, position: Vector3): ()
 	local isReplicated = replicatedGroupById[groupIdByBoid[boidId]]
 	local spatialCells = if isReplicated then replicatedSpatialCells else localSpatialCells
 	local existing = spatialCells[spatialKey]
-	if existing and renderCellKeyByBoid[boidId] == existing.key then return end
-	local previousKey = renderCellKeyByBoid[boidId]
-	local previousCell = if previousKey then renderCellsByKey[previousKey] else nil
 	if previousCell and not previousCell.motionResumedAt then
 		-- A hidden row can migrate into an already active cell on snapshot intake.
 		-- Keep its suspended interval even though the old cell may be removed.
-		motionResumeAtByIndex[renderIndex] = workspace:GetServerTimeNow()
+		motionResumeAtByIndex[renderIndex] = now
 	end
 	removeBoidFromRenderCell(boidId)
 	local cell: RenderCell
@@ -302,12 +309,17 @@ local function assignBoidToRenderCell(boidId: number, position: Vector3): ()
 			networkCenter = networkOrigin + Vector3.one * NETWORK_HALF_SIZE,
 			isReplicated = isReplicated, isInView = false, visibility = Visibility.New(),
 			renderIndices = {}, slotByRenderIndex = {},
-			nextDueTime = workspace:GetServerTimeNow(), scheduledInterval = 0, resumeSlot = 1,
+			nextDueTime = now, scheduledInterval = 0, resumeSlot = 1,
 		}
 		cell = created
 		-- A visible migrant already has a usable pose. Crossing a cell boundary
 		-- alone must not hide it.
 		cell.visibility.isEligible = opacityByIndex[renderIndex] > 0
+		cell.visibility.targetOpacity = opacityByIndex[renderIndex]
+		cell.visibility.appliedOpacity = opacityByIndex[renderIndex]
+		if cell.visibility.isEligible and previousCell then
+			cell.motionResumedAt = previousCell.motionResumedAt
+		end
 		renderCellsByKey[cell.key] = cell
 		spatialCells[spatialKey] = cell
 		activeRenderCells[#activeRenderCells + 1] = cell
@@ -316,7 +328,11 @@ local function assignBoidToRenderCell(boidId: number, position: Vector3): ()
 	-- Mixed member opacity (including a visible migrant entering a hidden cell)
 	-- needs one bounded pass before the cell can be treated as uniform again.
 	if opacityByIndex[renderIndex] ~= cell.visibility.appliedOpacity then cell.visibility.appliedOpacity = -1 end
-	cell.nextDueTime = math.min(cell.nextDueTime, workspace:GetServerTimeNow())
+	-- Ordinary migrations must not bypass the destination's render cadence.
+	-- Only a member that needs an opacity change requires an urgent pass.
+	if opacityByIndex[renderIndex] ~= cell.visibility.targetOpacity then
+		cell.nextDueTime = math.min(cell.nextDueTime, now)
+	end
 
 	local slot: number = #cell.renderIndices + 1
 	cell.renderIndices[slot] = renderIndex
@@ -711,7 +727,7 @@ end
 
 local lastSnapshotTimeByBoid:{[number]: number} = {}
 
-local function acceptSnapshotRow(boidId: number, completionTime: number, px: number, py: number, pz: number, vx: number, vy: number, vz: number): ()
+local function acceptSnapshotRow(boidId: number, completionTime: number, now: number, px: number, py: number, pz: number, vx: number, vy: number, vz: number): ()
 	-- Pre-spawn or retired rows must not seed deduplication for a later lifetime.
 	if not renderIndexByBoid[boidId] then return end
 	local lastTime = lastSnapshotTimeByBoid[boidId]
@@ -720,21 +736,23 @@ local function acceptSnapshotRow(boidId: number, completionTime: number, px: num
 	end
 	lastSnapshotTimeByBoid[boidId] = completionTime
 	local position = Vector3.new(px, py, pz)
-	assignBoidToRenderCell(boidId, position)
+	assignBoidToRenderCell(boidId, position, now)
 	pushSnapshot(boidId, completionTime, position, Vector3.new(vx, vy, vz))
 end
 
 local function consumeCellSnapshot(origin: Vector3, networkBoids: buffer, boidCount: number, completionTime: number): ()
 	if boidCount <= 0 or buffer.len(networkBoids) < boidCount * PacketCodec.BOID_ROW_BYTES then return end
+	local now = workspace:GetServerTimeNow()
 	for boidId: number, px: number, py: number, pz: number, vx: number, vy: number, vz: number in PacketCodec.ForEachBoid(networkBoids, 0, boidCount) do
-		acceptSnapshotRow(boidId, completionTime, origin.X + px, origin.Y + py, origin.Z + pz, vx, vy, vz)
+		acceptSnapshotRow(boidId, completionTime, now, origin.X + px, origin.Y + py, origin.Z + pz, vx, vy, vz)
 	end
 end
 
 local function consumeNetworkPacket(packet: buffer, sourceTime: number): ()
+	local now = workspace:GetServerTimeNow()
 	for offset, ox, oy, oz, count in PacketCodec.ForEachCellHeader(packet) do
 		for boidId, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, count) do
-			acceptSnapshotRow(boidId, sourceTime, ox + px, oy + py, oz + pz, vx, vy, vz)
+			acceptSnapshotRow(boidId, sourceTime, now, ox + px, oy + py, oz + pz, vx, vy, vz)
 		end
 	end
 end

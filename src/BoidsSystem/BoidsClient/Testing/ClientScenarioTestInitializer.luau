@@ -19,8 +19,6 @@ local ScenarioTypes = require(ScenarioModules.Types)
 local Delivery = require(ScenarioModules.Delivery)
 local Testing = BoidsReplicated:WaitForChild("Testing")
 local PerformanceTelemetry = require(Testing:WaitForChild("PerformanceTelemetry"))
-local Divergence = require(Testing.PerformanceTelemetry.Divergence)
-local SimulationReplication = require(BoidsReplicated.SimulationReplication)
 local RendererBenchmark = require(script.Parent.RendererBenchmark)
 local Renderer = require(script.Parent.Parent.BoidsRenderer)
 local BenchmarkHarness = require(Testing:WaitForChild("BenchmarkHarness"))
@@ -66,7 +64,7 @@ local function startScenarioTest(scenarioName: string, clientGroups: {GroupDefin
 		end
 	end
 	PerformanceTelemetry.Start(scenarioName, boids, warmupSeconds, sampleSeconds, function()
-		return Divergence.Read(SimulationReplication.ForEachClientCorrection, boids.GetBoidState, workspace:GetServerTimeNow())
+		return boids.ReadCorrectionSample()
 	end, if benchmarkOptions then benchmarkOptions.metadata else nil)
 end
 

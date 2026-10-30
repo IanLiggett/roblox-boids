@@ -222,6 +222,9 @@ export type JobCell = {
 
 export type MeasurementMode = "minimal" | "detailed"
 export type WorkerMeasurement = {
+	correctionIntakeMs: number?,
+	correctionIntakePackets: number?,
+	correctionIntakeRows: number?,
 	detailed: boolean,
 	executionMs: number,
 	snapshotMs: number,
@@ -245,7 +248,7 @@ export type WorkerMeasurement = {
 	inputBufferBytes: number,
 	outputBufferBytes: number,
 }
-export type RuntimeCounterName = "scheduledJobs" | "scheduledBoids" | "completedJobs" | "completedScheduledBoids" | "processedBoids" | "skippedBoids" | "survivingBoids" | "migratedBoids" | "observedBoids" | "returnedSourceBoids" | "countMismatches" | "timedOutJobs" | "discardedJobs" | "mergeFailures" | "outstandingJobs" | "peakOutstandingJobs" | "workerExecutionMs" | "workerSnapshotMs" | "jobBuildMs" | "dispatchMs" | "resultHandlingMs" | "mergeMs" | "observerPreparationMs" | "observerCallbacksMs" | "snapshotDeliveryMs" | "packetizationMs" | "schedulerMs" | "inboundDelayMs" | "outboundDelayMs" | "jobTurnaroundMs" | "detailedJobs" | "candidateExaminations" | "acceptedDirectInteractions" | "aggregateBucketVisits" | "acceptedAggregatePopulation" | "obstacleForwardRays" | "obstacleEscapeRays" | "obstacleDetourStarts" | "obstacleDetourUpdates" | "obstacleSoftFallbacks" | "pages" | "occupiedSlots" | "inputBufferBytes" | "outputBufferBytes" | "correctionMessages" | "dispatchPumps" | "dispatchPumpMs" | "heartbeatDispatches" | "completionDispatches" | "timerDispatches" | "dispatchBudgetStops" | "dispatchNoActorStops" | "dispatchNoDueStops"
+export type RuntimeCounterName = "correctionIntakeMs" | "correctionIntakePackets" | "correctionIntakeRows" | "scheduledJobs" | "scheduledBoids" | "completedJobs" | "completedScheduledBoids" | "processedBoids" | "skippedBoids" | "survivingBoids" | "migratedBoids" | "observedBoids" | "returnedSourceBoids" | "countMismatches" | "timedOutJobs" | "discardedJobs" | "mergeFailures" | "outstandingJobs" | "peakOutstandingJobs" | "workerExecutionMs" | "workerSnapshotMs" | "jobBuildMs" | "dispatchMs" | "resultHandlingMs" | "mergeMs" | "observerPreparationMs" | "observerCallbacksMs" | "snapshotDeliveryMs" | "packetizationMs" | "schedulerMs" | "inboundDelayMs" | "outboundDelayMs" | "jobTurnaroundMs" | "detailedJobs" | "candidateExaminations" | "acceptedDirectInteractions" | "aggregateBucketVisits" | "acceptedAggregatePopulation" | "obstacleForwardRays" | "obstacleEscapeRays" | "obstacleDetourStarts" | "obstacleDetourUpdates" | "obstacleSoftFallbacks" | "pages" | "occupiedSlots" | "inputBufferBytes" | "outputBufferBytes" | "correctionMessages" | "dispatchPumps" | "dispatchPumpMs" | "heartbeatDispatches" | "completionDispatches" | "timerDispatches" | "dispatchBudgetStops" | "dispatchNoActorStops" | "dispatchNoDueStops"
 export type LatencySummary = {
 	sampleCount: number,
 	totalSamples: number,
@@ -265,7 +268,11 @@ export type RuntimeMetrics = {
 }
 
 -- Full Job records cross the Actor boundary; coordinator ownership is enforced by the execution/commit lifecycle.
+export type CorrectionDivergenceSample = {sampleCount: number, positionSum: number, velocitySum: number, positionSquared: number, velocitySquared: number, maxPositionError: number}
+
 export type Job = {
+	correctionSampleRevision: number?,
+	correctionDivergence: CorrectionDivergenceSample?,
 	obstacleRequest: ObstacleCaptureRequest?,
 	obstacleObservation: ObstacleObservation?,
 	detailedMetrics: boolean,
@@ -315,6 +322,7 @@ export type WorkerJobCell = {
 }
 
 export type WorkerJobResult = {
+	correctionDivergence: CorrectionDivergenceSample?,
 	obstacleObservation: ObstacleObservation?,
 	measurement: WorkerMeasurement,
 	snapshotGroups: SnapshotGroupsBySourceCell,
