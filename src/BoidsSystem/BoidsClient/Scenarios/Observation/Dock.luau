@@ -46,7 +46,8 @@ function Dock.Start(observation: Api): Controller
 		item.TextColor3 = FOREGROUND
 		item.BackgroundColor3 = BUTTON
 		item.BorderSizePixel = 0
-		item.Modal = true
+		-- Handoff owns mouse unlocking only while observation is active.
+		item.Modal = false
 		item.Parent = parent
 		table.insert(connections, item.Activated:Connect(function(_input: InputObject, _clickCount: number): ()
 			callback()

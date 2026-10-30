@@ -14,6 +14,14 @@ type Result = { acquired: number, released: number, cameraRestored: boolean }
 return function(): Result
 	assert(RunService:IsClient(), "Run handoff verification in the client runtime")
 	local player = Players.LocalPlayer
+	local gui = player.PlayerGui:FindFirstChild("BoidsObservation")
+	if gui then
+		for _, descendant in gui:GetDescendants() do
+			if descendant:IsA("GuiButton") then
+				assert(not descendant.Modal, "Observer UI must not override the host mouse lock")
+			end
+		end
+	end
 	local boidsClient = player:WaitForChild("PlayerScripts"):WaitForChild("BoidsClient")
 		:: typeof(game.ServerScriptService.BoidsSystem.BoidsClient)
 	local handoff = require(boidsClient.Scenarios.Observation.Handoff)

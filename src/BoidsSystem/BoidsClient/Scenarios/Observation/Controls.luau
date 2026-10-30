@@ -61,8 +61,9 @@ local function button(parent: Instance, name: string, text: string, y: number, c
 	item.TextSize = 14
 	item.TextColor3 = FOREGROUND
 	item.Text = text
-	-- Session controls remain reachable while the package owns the viewing camera.
-	item.Modal = true
+	-- Handoff unlocks the mouse during observation; hidden controls must not
+	-- override a host camera's mouse lock before a session starts.
+	item.Modal = false
 	item.Activated:Connect(function(_input: InputObject, _clickCount: number): ()
 		callback()
 	end)

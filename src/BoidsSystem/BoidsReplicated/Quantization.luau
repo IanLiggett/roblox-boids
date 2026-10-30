@@ -8,7 +8,8 @@ Description:
 	worker, storage, and network code.
 
 Public API:
-	MAX_U8_INT, MAX_U16_INT, CELL_SIZE, NORM_VELOCITY_MIN, NORM_VELOCITY_RANGE, VELOCITY_MIN, VELOCITY_RANGE
+	MAX_U8_INT, MAX_U16_INT, CELL_SIZE, CELL_MARGIN, POSITION_MIN, POSITION_RANGE
+	NORM_VELOCITY_MIN, NORM_VELOCITY_RANGE, VELOCITY_MIN, VELOCITY_RANGE
 	quantizePositionAxis(axis: number, maxInt: number): number
 	dequantizePositionAxis(encoded: number, maxInt: number): number
 	quantizeVelocityAxis(axis: number, minVelocity: number, velocityRange: number, maxInt: number): number
@@ -38,6 +39,15 @@ Quantization.MAX_U16_INT = MAX_U16_INT
 local CELL_SIZE:number = 64
 Quantization.CELL_SIZE = CELL_SIZE
 
+-- Session-fixed: storage and every snapshot decoder must use the same range.
+-- Owner-confirmed default after comparing 0/2/4/8 in fresh sessions.
+local CELL_MARGIN = 4
+Quantization.CELL_MARGIN = CELL_MARGIN
+local POSITION_MIN = -CELL_MARGIN
+local POSITION_RANGE = CELL_SIZE + 2 * CELL_MARGIN
+Quantization.POSITION_MIN = POSITION_MIN
+Quantization.POSITION_RANGE = POSITION_RANGE
+
 local NORM_VELOCITY_MAX:number = 1
 local NORM_VELOCITY_MIN:number = -1
 local NORM_VELOCITY_RANGE:number = NORM_VELOCITY_MAX - NORM_VELOCITY_MIN
@@ -59,7 +69,7 @@ local function quantizePositionAxis(axis:number, maxInt:number):number
 	return
 		math.clamp(
 			math.round(
-				(axis / CELL_SIZE)
+				((axis - POSITION_MIN) / POSITION_RANGE)
 					* maxInt
 			), 0, maxInt
 		)
@@ -69,7 +79,7 @@ Quantization.quantizePositionAxis = quantizePositionAxis
 local function dequantizePositionAxis(encoded:number, maxInt:number):number
 	return 
 		(encoded / maxInt)
-		* CELL_SIZE
+		* POSITION_RANGE + POSITION_MIN
 end
 Quantization.dequantizePositionAxis = dequantizePositionAxis
 

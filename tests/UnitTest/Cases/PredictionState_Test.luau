@@ -19,11 +19,11 @@ return function(t: UnitTest.Context): ()
 	end
 
 	local function send(state: prediction.State): number
-		local byTime, times = prediction.BuildSnapshots(state)
+		local byTime, times = prediction.BuildSnapshots(state, 100, 0)
 		local sent = 0
 		for _, time in times do
 			for _, packet in codec.ConvertSimulationSnapshotToPackets(byTime[time]) do
-				sent += prediction.RecordSent(state, packet, time)
+				sent += prediction.RecordSent(state, packet, time, time)
 			end
 		end
 		prediction.ClearPending(state)
@@ -64,9 +64,9 @@ return function(t: UnitTest.Context): ()
 	t.test("accurate straight trajectory has no age refresh beyond 24 seconds", function()
 		local state = prediction.New()
 		consider(state, 7, Vector3.one * 20, Vector3.new(10, 1, 1), 1)
-		local byTime = prediction.BuildSnapshots(state)
+		local byTime = prediction.BuildSnapshots(state, 100, 0)
 		local packet = codec.ConvertSimulationSnapshotToPackets(byTime[1])[1]
-		prediction.RecordSent(state, packet, 1)
+		prediction.RecordSent(state, packet, 1, 1)
 		prediction.ClearPending(state)
 		for offset, ox, oy, oz, count in codec.ForEachCellHeader(packet) do
 			for id, px, py, pz, vx, vy, vz in codec.ForEachBoid(packet, offset, count) do
@@ -87,7 +87,7 @@ return function(t: UnitTest.Context): ()
 		t.expect.equal(state.count, 2)
 		prediction.Discard(state, 2)
 		t.expect.equal(state.count, 1)
-		local byTime, times = prediction.BuildSnapshots(state)
+		local byTime, times = prediction.BuildSnapshots(state, 100, 0)
 		t.expect.equal(times[1], 3)
 		t.expect.equal(byTime[3][1].boidCount, 1)
 		send(state)
@@ -125,7 +125,7 @@ return function(t: UnitTest.Context): ()
 			local origin = if id % 2 == 0 then Vector3.new(-64, 64, 0) else Vector3.zero
 			consider(state, id, origin + Vector3.one * 20, Vector3.xAxis, if id % 3 == 0 then 2 else 1, 4, 2, origin)
 		end
-		local byTime, times = prediction.BuildSnapshots(state)
+		local byTime, times = prediction.BuildSnapshots(state, 100, 0)
 		t.expect.equal(#times, 2)
 		t.expect.equal(times[1], 1)
 		t.expect.equal(times[2], 2)
@@ -141,15 +141,65 @@ return function(t: UnitTest.Context): ()
 		local state = prediction.New()
 		for id = 1, 125 do consider(state, id, Vector3.one * 20, Vector3.xAxis, 1) end
 		consider(state, 300, Vector3.one * 20, Vector3.yAxis, 2)
-		local byTime = prediction.BuildSnapshots(state)
+		local byTime = prediction.BuildSnapshots(state, 100, 0)
 		local packets = codec.ConvertSimulationSnapshotToPackets(byTime[1])
-		t.expect.equal(prediction.RecordSent(state, packets[1], 1), 120)
+		t.expect.equal(prediction.RecordSent(state, packets[1], 1, 1), 120)
 		t.expect.equal(state.count, 6)
 		t.expect.equal(state.rowsByTime[1], 5)
 		t.expect.equal(state.rowsByTime[2], 1)
 		t.expect.equal(send(state), 6)
 		t.expect.equal(next(state.rowsByTime), nil)
 		t.expect.equal(state.baselineCount, 126)
+	end)
+
+	t.test("cooldown uses successful wall-clock send time and releases the newest source at the boundary", function()
+		local state = prediction.New()
+		consider(state, 7, Vector3.one * 20, Vector3.xAxis, 1)
+		local first = prediction.BuildSnapshots(state, 10, 0.5)
+		local packet = codec.ConvertSimulationSnapshotToPackets(first[1])[1]
+		prediction.RecordSent(state, packet, 1, 10)
+		consider(state, 7, Vector3.one * 40, Vector3.yAxis * 20, 2)
+		consider(state, 7, Vector3.one * 50, Vector3.zAxis * 20, 3)
+		local blocked, times, deadline = prediction.BuildSnapshots(state, 10.499, 0.5)
+		t.expect.equal(next(blocked), nil)
+		t.expect.equal(#times, 0)
+		t.expect.equal(deadline, 10.5)
+		t.expect.equal(state.count, 1)
+		local ready, readyTimes = prediction.BuildSnapshots(state, 10.5, 0.5)
+		t.expect.equal(readyTimes[1], 3)
+		t.expect.equal(ready[3][1].boidCount, 1)
+		t.expect.equal(prediction.GetReadyTime(state, 7, 0), 10)
+	end)
+
+	t.test("cooldown is recipient-local and cancellation or retirement removes blocked corrections", function()
+		local a, b = prediction.New(), prediction.New()
+		for _, state in {a, b} do consider(state, 1, Vector3.one * 20, Vector3.xAxis, 1) end
+		send(a)
+		consider(a, 1, Vector3.one * 40, Vector3.yAxis * 20, 2)
+		t.expect.equal(next((prediction.BuildSnapshots(a, 1.1, 2))), nil)
+		t.expect.truthy(next((prediction.BuildSnapshots(b, 1.1, 2))))
+		consider(a, 1, Vector3.one * 21, Vector3.xAxis, 2.1)
+		t.expect.equal(a.count, 0)
+		consider(a, 1, Vector3.one * 40, Vector3.yAxis * 20, 3)
+		prediction.Discard(a, 1)
+		consider(a, 1, Vector3.one * 40, Vector3.yAxis * 20, 4)
+		t.expect.truthy(next((prediction.BuildSnapshots(a, 1.1, 2))))
+	end)
+
+	t.test("full eligible packets exclude blocked rows and preserve them for a later partial send", function()
+		local state = prediction.New()
+		consider(state, 1, Vector3.one * 20, Vector3.xAxis, 1)
+		send(state)
+		consider(state, 1, Vector3.one * 40, Vector3.yAxis * 20, 2)
+		for id = 2, 126 do consider(state, id, Vector3.one * 20, Vector3.xAxis, 2) end
+		local ready = prediction.BuildSnapshots(state, 1.1, 0.5)
+		local packets = codec.ConvertSimulationSnapshotToPackets(ready[2])
+		local sent = 0
+		for _, packet in packets do sent += prediction.RecordSent(state, packet, 2, 1.1) end
+		t.expect.equal(sent, 125)
+		t.expect.equal(state.count, 1)
+		local expired = prediction.BuildSnapshots(state, 1.5, 0.5)
+		t.expect.equal(expired[2][1].boidCount, 1)
 	end)
 
 	t.test("metrics reads copy recipient state", function()

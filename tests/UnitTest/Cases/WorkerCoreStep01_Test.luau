@@ -12,7 +12,7 @@ return function(t: UnitTest.Context): ()
  local SharedTypes = require(package.SharedTypes)
  local cloneId = 0
  local lifetime = 1
- local function run(count: number, missingLast: boolean, migrate: boolean, detailed: boolean, buckets: boolean?, reconciliationBatches: {{FixtureTypes.MessageReconciliationTarget}}?, emitSnapshot: boolean?, raycastProvider: FixtureTypes.RaycastProvider?, elapsedTicks: number?, initialPosition: Vector3?, initialObstacleDirection: Vector3?): FixtureTypes.Result
+ local function run(count: number, missingLast: boolean, migrate: boolean, detailed: boolean, buckets: boolean?, reconciliationBatches: {{FixtureTypes.MessageReconciliationTarget}}?, emitSnapshot: boolean?, raycastProvider: FixtureTypes.RaycastProvider?, elapsedTicks: number?, initialPosition: Vector3?, initialObstacleDirection: Vector3?, initialVelocity: Vector3?, gravityWell: SharedTypes.GravityWell?): FixtureTypes.Result
   cloneId += 1
   local clone = template:Clone()
   clone.Name = "RunningWorkerFixture_" .. cloneId
@@ -26,6 +26,7 @@ return function(t: UnitTest.Context): ()
    local core: FixtureTypes.Core = loadWorker(clone)
    core.Start(actor)
    local handlers: FixtureTypes.Handlers = registrations :: FixtureTypes.Handlers
+   if gravityWell then handlers.NewGlobalGravityWell(gravityWell) end
    if raycastProvider then
     core.SetTestRaycastProvider(raycastProvider)
    end
@@ -59,7 +60,8 @@ return function(t: UnitTest.Context): ()
      Storage.WriteBoidId(page.data,slot,start+slot+1)
      local startPosition=initialPosition or Vector3.new(if migrate then 127 else 40,40,40)
      Storage.WritePosition(page.data,slot,startPosition.X,startPosition.Y,startPosition.Z)
-     Storage.WriteVelocity(page.data,slot,1,0,0);Storage.WriteSpeed(page.data,slot,20)
+     local velocity: Vector3 = initialVelocity or Vector3.xAxis
+     Storage.WriteVelocity(page.data,slot,velocity.X,velocity.Y,velocity.Z);Storage.WriteSpeed(page.data,slot,20)
      Storage.WriteLastTick(page.data,slot,100-tickDelta)
      Storage.WriteObstacleDirection(page.data,slot,initialObstacleDirection or Vector3.zero)
     end
@@ -224,6 +226,85 @@ return function(t: UnitTest.Context): ()
   local job=run(1,false,false,true)
   t.expect.equal(job.measurement.processedBoids,1);t.expect.equal(job.measurement.survivingBoids,1)
   t.expect.equal(job.measurement.migratedBoids,0);t.expect.equal(job.jobCells[1].processedBoidCount,1)
+ end)
+ t.test("expanded faces edges and corners retain endpoints and migrate beyond them", function()
+  local q = require(package.Quantization)
+  for x = -1, 1 do
+   for y = -1, 1 do
+    for z = -1, 1 do
+     if x == 0 and y == 0 and z == 0 then continue end
+     local function axis(sign: number): number
+      return if sign < 0 then -q.CELL_MARGIN elseif sign > 0 then q.CELL_SIZE + q.CELL_MARGIN else 32
+     end
+     local position: Vector3 = Vector3.new(axis(x), axis(y), axis(z))
+     local velocity: Vector3 = Vector3.new(x, y, z).Unit
+     local retained: FixtureTypes.Result = run(1,false,false,true,nil,nil,true,nil,0,position,nil,velocity)
+     t.expect.equal(retained.measurement.migratedBoids,0)
+     t.expect.equal(retained.measurement.returnedSourceBoids,1)
+     local moved: FixtureTypes.Result = run(1,false,false,true,nil,nil,true,nil,60,position,nil,velocity)
+     t.expect.equal(moved.measurement.migratedBoids,1)
+     t.expect.equal(moved.measurement.returnedSourceBoids,0)
+     local destinations = 0
+     for id, row in moved.movedBoids do
+      destinations += 1
+      t.expect.equal(row[1],1)
+      local worldPosition = row[2] :: Vector3
+      local gx,gy,gz = q.ConvertCoordsToGrid(worldPosition.X,worldPosition.Y,worldPosition.Z)
+      t.expect.equal(id,q.GetNumericalKey(gx,gy,gz))
+     end
+     t.expect.equal(destinations,1)
+    end
+   end
+  end
+ end)
+ t.test("repeated nominal boundary crossings retain membership", function()
+  local q = require(package.Quantization)
+  local position: Vector3 = Vector3.new(q.CELL_SIZE-1,32,32)
+  for step = 1, 8 do
+   local velocity: Vector3 = if step % 2 == 1 then Vector3.xAxis else -Vector3.xAxis
+   local job: FixtureTypes.Result = run(1,false,false,true,nil,nil,true,nil,6,position,nil,velocity)
+   if q.CELL_MARGIN == 0 then
+    t.expect.equal(job.measurement.migratedBoids,1)
+    return
+   end
+   t.expect.equal(job.measurement.migratedBoids,0)
+   position = Vector3.new(Storage.ReadPosition(job.jobCells[1].pages.pages[1].data,0))
+   t.expect.equal(job.snapshotGroups[1][1].boidCount,1)
+  end
+ end)
+ t.test("large movement migrates directly across multiple cells", function()
+  local q = require(package.Quantization)
+  local moved: FixtureTypes.Result = run(1,false,false,true,nil,nil,true,nil,1200,Vector3.new(32,32,32))
+  t.expect.equal(moved.measurement.migratedBoids,1)
+  for id, row in moved.movedBoids do
+   local position = row[2] :: Vector3
+   t.expect.truthy(position.X > q.CELL_SIZE * 2)
+   local x,y,z = q.ConvertCoordsToGrid(position.X,position.Y,position.Z)
+   t.expect.equal(id,q.GetNumericalKey(x,y,z))
+  end
+ end)
+ t.test("gravity filtering includes wells affecting the membership margin", function()
+  local q = require(package.Quantization)
+  local initial: Vector3 = Vector3.new(q.CELL_SIZE + q.CELL_MARGIN,32,32)
+  local well: SharedTypes.GravityWell = {id=1,position=initial+Vector3.zAxis,strength=400,influenceRadius=2}
+  local plain: FixtureTypes.Result = run(1,false,false,true,nil,nil,true,nil,1,initial)
+  local pulled: FixtureTypes.Result = run(1,false,false,true,nil,nil,true,nil,1,initial,nil,nil,well)
+  local function velocity(job: FixtureTypes.Result): Vector3
+   if job.measurement.migratedBoids > 0 then
+    for _, row in job.movedBoids do return row[3] :: Vector3 end
+   end
+   return Vector3.new(Storage.ReadVelocity(job.jobCells[1].pages.pages[1].data,0))
+  end
+  t.expect.truthy(velocity(pulled).Z > velocity(plain).Z + 0.1)
+ end)
+ t.test("negative and overflow local buckets retain all occupants", function()
+  local q = require(package.Quantization)
+  for _, axis in {-q.CELL_MARGIN,q.CELL_SIZE+q.CELL_MARGIN} do
+   local job: FixtureTypes.Result = run(101,false,false,true,nil,nil,true,nil,0,Vector3.new(axis,axis,axis))
+   t.expect.equal(job.measurement.processedBoids,101)
+   t.expect.equal(job.measurement.returnedSourceBoids,101)
+   t.expect.equal(job.measurement.migratedBoids,0)
+  end
  end)
  -- Moving out of a cell still counts as completed simulation.
  t.test("migrant is processed but absent from source rows",function()

@@ -78,7 +78,7 @@ end
 function ViewerLOD.GetNetworkTolerances(userId: number, origin: Vector3): (number?, number?)
 	local viewer = viewerObservers[userId]
 	if not viewer then return nil, nil end
-	local config: NetworkLODConfig = LODConfig.GetActive().network
+	local config: NetworkLODConfig = LODConfig.GetNetworkConfig()
 	local dSq = getNearestObserverDistanceSq(viewer, origin + HALF_CELL)
 	if dSq > config.farDistance * config.farDistance then return nil, nil end
 	local alpha = distanceAlphaSq(dSq, config.nearDistance, config.farDistance)

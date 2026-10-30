@@ -1,5 +1,23 @@
 # Boids Lessons
 
+[NETWORK] Cooldowns can fragment source-time batches
+
+Tags: network LOD, cooldown, pending rows, source time, batching, bandwidth
+
+Rejected
+
+Assuming per-boid cooldowns and newest-row coalescing necessarily reduce packet traffic, or increasing cooldowns based only on sent-row counts.
+
+Reason
+
+Independently eligible rows can split one original source-time cohort across several flushes. Homogeneous source-time transport then emits more small packets, consuming much of the row saving. Queue age can already exceed the partial-batching deadline when cooldown expires.
+
+Current guardrail
+
+Compare sent rows, payload bytes, packet counts, and packetization cost together before adopting longer intervals. Keep original source timestamps; never retimestamp old rows merely to combine packets. Test sample-aligned eligibility separately before changing the approved expiry-drain behavior.
+
+---
+
 [BOIDS] Simulation ownership
 
 Tags: boids, ownership, combat health, fields, scenarios, test orchestration, package boundary

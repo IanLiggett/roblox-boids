@@ -8,6 +8,7 @@ Description:
 
 Public API:
 	getActive(): Config
+	GetNetworkConfig(): NetworkConfig
 	getSimulationConfig(kind: SimulationKind): SimulationConfig
 	getSimulationKindForGroup(groupId: number): SimulationKind
 	getPresetName(): PresetName
@@ -16,6 +17,7 @@ Public API:
 ]]
 
 local RunService = game:GetService("RunService")
+local ClientPresentationConfig = require(script.Parent.ClientPresentationConfig)
 local LODConfig = {}
 
 
@@ -49,6 +51,7 @@ export type SimulationConfig = {
 export type SimulationKind = "server" | "clientPrediction" | "clientLocal"
 
 export type NetworkConfig = {
+	minSendIntervalSeconds: number,
 	nearDistance: number,
 	farDistance: number,
 	nearPositionError: number,
@@ -62,7 +65,7 @@ export type Config = {
 	serverSimulation: SimulationConfig,
 	clientPredictionSimulation: SimulationConfig,
 	clientLocalSimulation: SimulationConfig,
-	network: NetworkConfig,
+	network: {[ClientPresentationConfig.Mode]: NetworkConfig},
 }
 
 local PRESET_ATTRIBUTE = "BoidsLODPreset"
@@ -109,12 +112,24 @@ local presets: {[PresetName]: Config} = {
 			backgroundIntervalMultiplier = 4,
 		},
 		network = {
-			nearDistance = 0,
-			farDistance = 512,
-			nearPositionError = 8,
-			farPositionError = 32,
-			nearVelocityError = 4,
-			farVelocityError = 16,
+			simulation = {
+				minSendIntervalSeconds = 0,
+				nearDistance = 0,
+				farDistance = 512,
+				nearPositionError = 24,
+				farPositionError = 96,
+				nearVelocityError = 12,
+				farVelocityError = 48,
+			},
+			renderer = {
+				minSendIntervalSeconds = 0,
+				nearDistance = 0,
+				farDistance = 512,
+				nearPositionError = 8,
+				farPositionError = 32,
+				nearVelocityError = 4,
+				farVelocityError = 16,
+			},
 		},
 	},
 	medium = {
@@ -154,12 +169,24 @@ local presets: {[PresetName]: Config} = {
 			backgroundIntervalMultiplier = 3,
 		},
 		network = {
-			nearDistance = 0,
-			farDistance = 512,
-			nearPositionError = 2,
-			farPositionError = 8,
-			nearVelocityError = 1,
-			farVelocityError = 4,
+			simulation = {
+				minSendIntervalSeconds = 0,
+				nearDistance = 0,
+				farDistance = 512,
+				nearPositionError = 6,
+				farPositionError = 24,
+				nearVelocityError = 3,
+				farVelocityError = 12,
+			},
+			renderer = {
+				minSendIntervalSeconds = 0,
+				nearDistance = 0,
+				farDistance = 512,
+				nearPositionError = 2,
+				farPositionError = 8,
+				nearVelocityError = 1,
+				farVelocityError = 4,
+			},
 		},
 	},
 	high = {
@@ -199,12 +226,24 @@ local presets: {[PresetName]: Config} = {
 			backgroundIntervalMultiplier = 2,
 		},
 		network = {
-			nearDistance = 0,
-			farDistance = 512,
-			nearPositionError = 1,
-			farPositionError = 4,
-			nearVelocityError = 1,
-			farVelocityError = 2,
+			simulation = {
+				minSendIntervalSeconds = 0,
+				nearDistance = 0,
+				farDistance = 512,
+				nearPositionError = 3,
+				farPositionError = 12,
+				nearVelocityError = 3,
+				farVelocityError = 6,
+			},
+			renderer = {
+				minSendIntervalSeconds = 0,
+				nearDistance = 0,
+				farDistance = 512,
+				nearPositionError = 1,
+				farPositionError = 4,
+				nearVelocityError = 1,
+				farVelocityError = 2,
+			},
 		},
 	},
 }
@@ -218,6 +257,8 @@ for _, config: Config in presets do
 	table.freeze(config.serverSimulation)
 	table.freeze(config.clientPredictionSimulation)
 	table.freeze(config.clientLocalSimulation)
+	table.freeze(config.network.simulation)
+	table.freeze(config.network.renderer)
 	table.freeze(config.network)
 	table.freeze(config)
 end
@@ -225,6 +266,7 @@ table.freeze(presets)
 LODConfig.Presets = presets
 
 local activePreset: PresetName = "low"
+local presentationMode: ClientPresentationConfig.Mode? = nil
 
 local function resolvePresetName(value: unknown): PresetName?
 	if type(value) ~= "string" then
@@ -256,6 +298,16 @@ end)
 
 function LODConfig.GetActive(): Config
 	return presets[activePreset]
+end
+
+-- Presentation mode is startup-only; quality preset changes remain live.
+function LODConfig.GetNetworkConfig(): NetworkConfig
+	local mode = presentationMode
+	if mode == nil then
+		mode = ClientPresentationConfig.Resolve()
+		presentationMode = mode
+	end
+	return presets[activePreset].network[mode]
 end
 
 function LODConfig.GetSimulationConfig(kind: SimulationKind): SimulationConfig

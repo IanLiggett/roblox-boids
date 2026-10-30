@@ -2,6 +2,14 @@
 
 Detailed editing constraints; start with ../docs/architecture.md. This is not a tutorial.
 
+Simulation cell membership and position encoding
+
+- Quantization.CELL_SIZE remains the 64-stud grid stride. CELL_MARGIN is a shared session-fixed constant with an owner-confirmed default of 4 studs after review of 0/2/4/8 benchmarks. Change it only between fresh sessions, shipping matching server/client code.
+- A member may occupy the inclusive local box [-CELL_MARGIN, CELL_SIZE + CELL_MARGIN]. Only movement beyond that box migrates it, directly to the ordinary grid cell containing its world position. Cell-center scheduling and network interest retain their existing rules.
+- Packed storage and snapshot position axes cover POSITION_MIN=-CELL_MARGIN through POSITION_MIN+POSITION_RANGE, with POSITION_RANGE=CELL_SIZE+2*CELL_MARGIN. Row byte counts are unchanged; old and new encoded rows are not interchangeable. All position decoders, including direct local renderer intake, use this shared mapping. At margin 4, U8 axis spacing is 72/255 studs.
+- Gravity-well broad-phase filtering uses expanded cell bounds. Query and renderer membership still use decoded world positions and their independent grids; no simulation membership margin is applied to them.
+- BenchmarkCellBoundary20k supplies fixed-seed boundary-following paths without flock forces. Compare it and BenchmarkReference20k using minimal instrumentation, 15-second warmup/45-second samples, three fresh runs per margin. For controlled comparisons, normal server/client test scripts set the existing runtime's viewer to camera-disabled with a fixed observer at (0,200,700) five seconds after startup; verify both scripts executed. A configured camera pose alone does not prove the runtime has matching observer interest. BenchmarkHarness records benchmarkCellMargin; compare migrations per processed row, total worker/coordinator cost, throughput, latency, cell counts and correction traffic.
+
 Boids Runtime Architecture
 
 Package boundary
@@ -113,7 +121,7 @@ LOD
 Current implementation
 
 - LODConfig has independent server, client-prediction, and client-local simulation settings.
-- LODConfig.client.visibleRenderBands, offscreenHertz, maxRenderBoidsPerFrame, and peripheralLodDistanceScale are the canonical renderer performance schedule. Renderer cells are 64 studs, independently subdividing the unchanged 128-stud simulation/query cells; visible-band work is selected per renderer cell, never per-frame per boid. Peripheral scale expands effective visible distance only near the view-cone edge.
+- LODConfig.client.visibleRenderBands, offscreenHertz, maxRenderBoidsPerFrame, and peripheralLodDistanceScale are the canonical renderer performance schedule. Renderer cells are 32 studs, independently subdividing the unchanged 64-stud simulation/transport cells; visible-band work is selected per renderer cell, never per-frame per boid. Peripheral scale expands effective visible distance only near the view-cone edge.
 
 Viewer observer scheduling
 
@@ -269,10 +277,11 @@ Observation command, inspection and presentation boundaries (F22-F24)
 
 ## Error based network LOD
 
-- ViewerLOD selects interest and squared position/velocity tolerances from existing observer distances, once per candidate cell and recipient. NetworkConfig uses near/far PositionError and VelocityError fields instead of frequency multipliers. LOW is 4/16 studs and 2/8 studs/s; MEDIUM 2/8 and 1/4; HIGH 1/4 and 1/2.
+- ViewerLOD selects interest and squared position/velocity tolerances from existing observer distances, once per candidate cell and recipient. NetworkConfig uses near/far PositionError and VelocityError fields instead of frequency multipliers. Renderer LOW is 8/32 studs and 4/16 studs/s; MEDIUM 2/8 and 1/4; HIGH 1/4 and 1/2. Each preset owns independent network.simulation/network.renderer profiles; simulation error tolerances are triple renderer values, with unchanged distances. LODConfig.GetNetworkConfig caches the startup presentation mode on first use and selects the active quality preset on each call.
 - JobBuilder emits packed candidates on interested cell updates, not a periodic network schedule. Original source-cell recipient identity and normalized migration keys remain intact. A migrant newly entering another recipient's interest is eligible on that destination's next scheduled update.
 - ServerTransport filters only completely merged results. Each candidate is decoded once across recipients; scalar prediction comparisons use last-sent decoded wire state. There are no recipient histories in Actor jobs or second storage scans. PredictionState is coordinator-only, with paged packed baselines and dense packed pending rows. It performs no simulation or client prediction work.
-- A missing baseline selects the next eligible row. Position error OR velocity difference can select; no minimum interval, maximum age, refresh, acknowledgement or recovery is added. Source time is still job completion time, not flush time. Simulation scheduling limits detection speed; this is a model-error trigger, not a bound on delayed/smoothed rendered poses.
+- A missing baseline selects the next eligible row. Position error OR velocity difference can select; a per-boid/per-recipient minimum send interval gates delivery after selection, with no maximum age, refresh, acknowledgement or recovery. Source time is still job completion time, not flush time. Simulation scheduling limits detection speed; this is a model-error trigger, not a bound on delayed/smoothed rendered poses.
+- NetworkConfig.minSendIntervalSeconds is independent per mode/preset: both modes default to 0s in every preset, disabling the gate after the bandwidth comparison. Successful handoff records server wall-clock send time separately from source time in packed baselines. Pending rows continue newest-source coalescing/cancellation during cooldown. BuildSnapshots excludes blocked rows before packet construction and returns their earliest eligibility; ServerTransport skips repeated blocked builds and wakes through its existing PostSimulation loop. Full packets cannot bypass cooldown; first observations have no cooldown. Live quality changes invalidate the cached eligibility deadline.
 - Only successful FireClient handoff advances baselines. Pending state is newest-per-ID, stale/equal timestamps cannot replace it, and newer states that return within tolerance cancel unsent corrections. DiscardBoids clears both pending and sent state before ID reuse; disconnect releases recipient state. Baseline pages and pending buffer capacity are retained for reuse until disconnect, with validity/count cleared on retirement.
 - Partial batching is 75 ms after validation from a 50 ms starting point (heartbeat scheduling may delay it); full source-time packets may flush sooner without flushing unrelated partial packets. The temporary cap is 50,000 calls/s/client with a one-second token capacity. The owner's operating limit is 500/client/s, with a 400 sustained tuning target. Raising batching in 25 ms steps is an explicit validation step, not runtime adaptation or permission to relax accuracy.
 

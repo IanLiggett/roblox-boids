@@ -7,7 +7,7 @@ local SharedTypes = require(script.Parent.Parent.SharedTypes)
 local PredictionState = {}
 
 local PAGE_ROWS = 256
-local BASELINE_BYTES = 33 -- validity, six f32 axes, f64 source time
+local BASELINE_BYTES = 41 -- validity, six f32 axes, f64 source time, f64 send time
 local PENDING_BYTES = 22 -- canonical row, three i16 origin axes, f64 source time
 local ROW_BYTES = PacketCodec.BOID_ROW_BYTES
 
@@ -106,12 +106,25 @@ function PredictionState.Discard(state: State, id: number): ()
 	end
 end
 
-function PredictionState.BuildSnapshots(state: State): ({[number]: SharedTypes.SimulationSnapshot}, {number})
+function PredictionState.GetReadyTime(state: State, id: number, minSendIntervalSeconds: number): number
+	local page = state.pages[id // PAGE_ROWS]
+	local offset = baselineOffset(id)
+	if not page or buffer.readu8(page, offset) == 0 then return -math.huge end
+	return buffer.readf64(page, offset + 33) + minSendIntervalSeconds
+end
+
+function PredictionState.BuildSnapshots(state: State, now: number, minSendIntervalSeconds: number): ({[number]: SharedTypes.SimulationSnapshot}, {number}, number)
 	local byTime: {[number]: SharedTypes.SimulationSnapshot} = {}
 	local cellsByTime: {[number]: {[number]: SharedTypes.CellSnapshot}} = {}
 	local times: {number} = {}
+	local nextReadyTime = math.huge
 	for slot = 0, state.count - 1 do
 		local offset = slot * PENDING_BYTES
+		local readyTime = PredictionState.GetReadyTime(state, buffer.readu16(state.pending, offset), minSendIntervalSeconds)
+		if now < readyTime then
+			nextReadyTime = math.min(nextReadyTime, readyTime)
+			continue
+		end
 		local time = buffer.readf64(state.pending, offset + 14)
 		local cells = cellsByTime[time]
 		if not cells then
@@ -139,11 +152,11 @@ function PredictionState.BuildSnapshots(state: State): ({[number]: SharedTypes.S
 		cell.boidCount += 1
 	end
 	table.sort(times)
-	return byTime, times
+	return byTime, times, nextReadyTime
 end
 
 -- Called only after the packet was handed to FireClient, never on enqueue.
-function PredictionState.RecordSent(state: State, packet: buffer, sourceTime: number): number
+function PredictionState.RecordSent(state: State, packet: buffer, sourceTime: number, sentAt: number): number
 	local count = 0
 	for offset, ox, oy, oz, boidCount in PacketCodec.ForEachCellHeader(packet) do
 		for id, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, boidCount) do
@@ -164,6 +177,7 @@ function PredictionState.RecordSent(state: State, packet: buffer, sourceTime: nu
 			buffer.writef32(page, base + 17, vy)
 			buffer.writef32(page, base + 21, vz)
 			buffer.writef64(page, base + 25, sourceTime)
+			buffer.writef64(page, base + 33, sentAt)
 			removePending(state, id)
 			count += 1
 		end

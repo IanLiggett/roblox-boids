@@ -69,7 +69,7 @@ return function(): {hiddenMotion: number, hiddenWrites: number, mixedOwnership: 
 		spawn(localGroup, ids[3], lifetime)
 		for _, id in ids do publish(id, point) end
 		waitFor(function(): boolean return part(remoteGroup, ids[1]).LocalTransparencyModifier == 0 and part(localGroup, ids[3]).LocalTransparencyModifier == 0 end)
-		desired = CFrame.lookAt(networkCenter + Vector3.zAxis * (originalGetActive().network.farDistance * 0.9), point)
+		desired = CFrame.lookAt(networkCenter + Vector3.zAxis * (LODConfig.GetNetworkConfig().farDistance * 0.9), point)
 		task.wait(0.2)
 		assert(part(remoteGroup, ids[1]).LocalTransparencyModifier == 0, "In-range replica changed opacity")
 		assert(part(localGroup, ids[3]).LocalTransparencyModifier == 0, "Local-only boid inherited network visibility")
@@ -84,7 +84,7 @@ return function(): {hiddenMotion: number, hiddenWrites: number, mixedOwnership: 
 		limited.client = table.clone(limited.client)
 		limited.client.maxRenderBoidsPerFrame = 1
 		LODConfig.GetActive = function(): LODConfig.Config return limited end
-		desired = CFrame.lookAt(networkCenter + Vector3.zAxis * (limited.network.farDistance + 100), point)
+		desired = CFrame.lookAt(networkCenter + Vector3.zAxis * (LODConfig.GetNetworkConfig().farDistance + 100), point)
 		task.wait()
 		local deletion = buffer.create(4)
 		buffer.writeu16(deletion, 0, 1)
@@ -160,7 +160,7 @@ return function(): {hiddenMotion: number, hiddenWrites: number, mixedOwnership: 
 			publish(ids[2], seed, Vector3.xAxis * 128)
 			task.wait(0.1)
 			if reason == "distance" then
-				desired = CFrame.lookAt(networkCenter + Vector3.zAxis * (originalGetActive().network.farDistance + 100), point)
+				desired = CFrame.lookAt(networkCenter + Vector3.zAxis * (LODConfig.GetNetworkConfig().farDistance + 100), point)
 				waitFor(function(): boolean return part(remoteGroup, ids[2]).LocalTransparencyModifier == 1 end)
 			else
 				desired = CFrame.lookAt(visibleView.Position, visibleView.Position + Vector3.zAxis)
