@@ -37,6 +37,17 @@ export type IndexSource = {
 	SubscribePostMerge: ((CompletedBatch) -> ()) -> (() -> ()),
 	SubscribeDeleted: (({number}) -> ()) -> (() -> ()),
 	GetBoidModel: (number) -> number?,
+	GetBoidMaxSpeed: (number) -> number?,
+	GetCollisionSample: (number) -> {position: Vector3,velocity: Vector3,sourceTime: number}?,
+	IsServerBoid: (number) -> boolean,
+	GetBoidState: (number) -> (Vector3?, Vector3?),
+	SubscribeCompletedCells: ((CompletedCells) -> ()) -> (() -> ()),
+	PrioritizeBoids: ({number},number) -> (),
+}
+export type CompletedCells = {
+	groupId: number, completionTime: number, replicaCeiling: number,
+	cells: {{id: number, origin: Vector3, pages: {{data: buffer,dead: buffer,cursor: number}}}},
+	migrants: {{cellId: number,rows: {number | Vector3}}},
 }
 export type Replication = {
 	IsServerBoid: (number) -> boolean,

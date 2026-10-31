@@ -51,7 +51,9 @@ local Dependencies = BoidsReplicated.Dependencies
 local Benchmarkers = require(Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
 local ClientRendererBridge = require(BoidsReplicated.ClientRendererBridge)
 
+local RuntimeTypes = require(script.Parent.RuntimeTypes)
 local Boids = {}
+local maxSpeedById=buffer.create(65536)
 local isStarted = false
 
 local BoidModels = SharedTypes.BoidModels
@@ -468,6 +470,7 @@ function Boids.NewBoid(
 	boidGroupById[boidId] = group
 	boidSightById[boidId] = sight
 	boidModelById[boidId] = resolvedModel
+	buffer.writeu8(maxSpeedById,boidId,maxSpeed)
 	
 	group.boidCount += 1
 	group.sightSum += sight
@@ -676,6 +679,21 @@ function Boids.SubscribePostMerge(observer: (batch: ResultCommit.CompletedBoidBa
 	return ResultCommit.SubscribePostMerge(observer)
 end
 
+function Boids.SubscribeCompletedCells(observer: (RuntimeTypes.CompletedCells) -> ()): () -> ()
+	return ResultCommit.SubscribeCompletedCells(observer)
+end
+
+function Boids.PrioritizeBoids(ids: {number},expiresAt: number): ()
+	assert(RunService:IsServer(),"Precision requests are server-owned")
+	assert(#ids<=128,"Precision batch exceeds its bound")
+	local now=workspace:GetServerTimeNow()
+	for _,id in ids do
+		local group,entry = boidGroupById[id],BoidStorage.BoidRegistry[id]
+		local cell = if group and entry then group.activeCells[entry.cellId] else nil
+		if group and cell then Cells.Prioritize(group,cell,expiresAt,now) end
+	end
+end
+
 -- Returns the packed simulation state, not the renderer state. This is used by
 -- telemetry to compare a client replica against its latest server snapshot.
 function Boids.GetBoidState(boidId: number): (Vector3?, Vector3?)
@@ -782,6 +800,19 @@ end
 
 function Boids.GetBoidModel(boidId: number): BoidModel?
 	return boidModelById[boidId]
+end
+function Boids.GetBoidMaxSpeed(id: number): number?
+	return if boidGroupById[id] then buffer.readu8(maxSpeedById,id) else nil
+end
+function Boids.GetCollisionSample(id: number): {position: Vector3,velocity: Vector3,sourceTime: number}?
+	local group,entry=boidGroupById[id],BoidStorage.BoidRegistry[id]
+	local cell=if group and entry then group.activeCells[entry.cellId] else nil
+	local page=if entry then BoidStorage.PageRegistry[entry.pageId] else nil
+	if not cell or not page or not entry then return nil end
+	local now=workspace:GetServerTimeNow()
+	local age=((math.floor(now*60)-BoidStorage.ReadLastTick(page.data,entry.slot))%65536)/60
+	if age>32 then return nil end
+	return {position=cell.origin+Vector3.new(BoidStorage.ReadPosition(page.data,entry.slot)),velocity=Vector3.new(BoidStorage.ReadVelocity(page.data,entry.slot))*BoidStorage.ReadSpeed(page.data,entry.slot),sourceTime=now-age}
 end
 
 function Boids.ForEachBoid(observer: (boidId: number, position: Vector3, model: BoidModel) -> ()): ()

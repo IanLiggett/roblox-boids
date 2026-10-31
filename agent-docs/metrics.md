@@ -179,7 +179,13 @@ the explicit execution/retirement ownership described in runtime.md.
 
 TransportMetrics copied snapshots include candidateRows, recipientComparisons, selectedRows (including pending replacements), sentRows, selectionMs and cap drops. SelectionMs includes completed-row decoding, threshold checks and queue/gauge maintenance; packet construction and baseline advancement are in existing packetizationMs. Per-recipient counters expose packet/payload/row totals and queue-delay sum/max, plus live baselineCount, pendingRows and packed stateBufferBytes. Buffer bytes exclude table/allocator overhead. Queue delay includes any cooldown hold and is oldest retained batch age at dispatch, an upper-bound batch measure rather than per-row latency; session maximum is labelled explicitly.
 
-PerformanceTelemetry exports networkErrorSelection window rates and per-recipient packet/payload rates, 500-packet operating-limit utilization, the 400-packet tuning target, queue delay and state gauges. Read actual runtime Report_server/Report_client StringValues. This requires no recurring per-boid measurement scan. Engine Stats remain separate from canonical payload byte counts; never present payload rates as full wire bandwidth or --!native as proof of native execution.
+PerformanceTelemetry exports networkErrorSelection window rates and per-recipient packet/payload rates, configured packet-budget utilization, queue delay and state gauges. Read actual runtime Report_server/Report_client StringValues. This requires no recurring per-boid measurement scan. Engine Stats remain separate from canonical payload byte counts; never present payload rates as full wire bandwidth or --!native as proof of native execution.
+
+## Collision and paced lifecycle measurements
+
+CollisionIndex reports current entries/memberships/incomplete entries and cumulative query/candidate/gather/reuse work. Candidate counts include duplicate/ignored memberships; exactTestCount currently shares that conservative count rather than claiming only successful narrow-phase calls. Query p50/p95 use a bounded 120-query retained suffix. Each result separately reports consumed work, elapsed time, oldest tested source time, truncation and coverage. Source time is never the query/read clock. Server facade maintenance reports queued bytes/cells and dropped completed cells independently.
+
+Completed-cell copy preparation contributes to observerPreparationMs and synchronous subscribers to observerCallbacksMs, outside snapshotDeliveryMs. Do not add these children to inclusive resultHandlingMs. LifecycleTransport queue-byte gauges estimate non-buffer controls; spawn/deletion buffers have exact payload lengths plus estimated framing. Actual wire bandwidth still requires engine capture. PrecisionRegions returns copied viewer/region/selection gauges; those quotas do not establish 20 Hz service under contention.
 
 ## Cell visibility measurements
 

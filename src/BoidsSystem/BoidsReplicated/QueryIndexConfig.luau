@@ -10,6 +10,7 @@ local ATTRIBUTE_NAME = "BoidQueryIndexMode"
 local DEFAULT_MODE: Mode = "none"
 local cachedMode: Mode? = nil
 local locked = false
+local usesExternalBudget=false
 
 local function isValidMode(mode: unknown): boolean
 	return mode == "none" or mode == "client" or mode == "server" or mode == "both"
@@ -37,6 +38,12 @@ end
 function QueryIndexConfig.IsLocked(): boolean
 	return locked
 end
+function QueryIndexConfig.SetExternalBudget(isExternal: boolean): boolean
+	if not RunService:IsServer() or locked then return false end
+	usesExternalBudget=isExternal
+	return true
+end
+function QueryIndexConfig.UsesExternalBudget(): boolean return usesExternalBudget end
 
 function QueryIndexConfig.Lock(): boolean
 	if not RunService:IsServer() then

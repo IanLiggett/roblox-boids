@@ -16,6 +16,7 @@ Current contract
 
 - The coordinator's local spawn/delete bridge carries process-local boid lifetimes. Renderer tombstones reject delayed retired spawns/deletes without corrupting a reused ID; duplicate registration is ignored. A rejected batch cannot recreate an empty group.
 - Snapshots for unknown IDs are ignored before timestamp tracking, so pre-spawn rows cannot poison the new rendered lifetime. This applies to local cell buffers and direct network packets; accepted snapshots use the unchanged no-snap reconciliation path.
+- Reliable deletion/group retirement records its authoritative source-time cutoff in ReplicaIdentity. That cutoff survives serial assignment and numeric ID reuse. Both renderer snapshot entry paths reject older/equal rows before recording source time; late old poses cannot steer a new incarnation. Process-local renderer tombstones retain their separate spawn/delete role.
 - Renderer alone owns dense row swaps, cell/model/Motor/query-index removal and group presentation state. Group deletion clears its color/count registry as well. The legacy renderer remote listeners were retired by explicit owner decision (2026-10-17); current `BoidJobUpdate` packets feed either CorrectionIntake or the renderer according to startup configuration.
 
 Rendered boid representation
@@ -24,7 +25,7 @@ Current implementation
 
 - Rendered boids live in workspace.BoidFolder.
 - Each rendered boid carries a numeric BoidId attribute.
-- Rendered boids have CanQuery disabled unconditionally. Physics world queries are not a supported boid-query path: even an Include-filtered ray retains broad-phase cost proportional to queryable boids. Client boid hit queries use BoidQueryIndex.
+- Rendered boids have CanQuery disabled unconditionally. Physics world queries are not a supported boid-query path: even an Include-filtered ray retains broad-phase cost proportional to queryable boids. Client boid hit queries use CollisionIndex over actual rendered poses.
 - BoidsRenderer anchors an invisible identity-space BoidRoot.
 - Each rendered boid is driven as Motor6D.Part1, with BoidRoot as Part0.
 - Calculated boid CFrames are assigned to Motor6D.Transform.
@@ -37,6 +38,7 @@ Renderer observation reads
 Current interface
 
 - GetRenderedBoidState(boidId) returns an independent value record with groupId, the current rendered CFrame, rendered velocity, isRendered, renderedAt, and snapshotAt. Lookup is O(1); no render/simulation state is advanced or mutated.
+- QueryAttack accepts a CollisionIndex request and shared budget and returns copied result metadata/hits with replica serials, contact/proxy positions and optional Part references for cosmetic feedback. Only live server replicas with serials become hit claims. Pose updates use ordinary scheduled rendering; queries never move boids or snap reconciliation. Visibility removal and dense swaps preserve index/serial lifetime.
 - HasRenderedGroup(groupId) provides an O(1) lifecycle check. GetRenderedGroupBounds(groupId) traverses only that group's rendered members on demand, returning count, centroid, minimum/maximum (including collision radii), sampledAt, and oldestRenderedAt.
 - Camera follow reads a single boid each frame or selected-group bounds at 2 Hz. No recurring full-population observation scan is added. These APIs work with queryIndexMode="none" and expose no mutable renderer tables, Instances, or buffers.
 - renderedAt is last visual update time and snapshotAt is last accepted snapshot time; neither is the last simulation tick. Simulation tick/age comes separately from Boids.GetBoidObservation and scenario age tracking, never from renderer snapshot/read timestamps.

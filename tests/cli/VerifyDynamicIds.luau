@@ -231,10 +231,11 @@ local function fixture(renderPacketsDirectly: boolean?)
 	local jobUpdates = event()
 	local directPacketCount = 0
 	local remotes = {SimulationState = {OnClientEvent = incoming}, RequestSimulationState = {FireServer = function() end}, BoidJobUpdate = {OnClientEvent = jobUpdates}}
-	local shared = {Remotes = remotes, SharedTypes = {}, NetworkResults = {}, RuntimeTypes = {}, ClientRendererBridge = {
+	local replicaIdentities = load(base .. "ReplicaIdentity.luau", {})
+	local shared = {ReplicaIdentity = replicaIdentities, Remotes = remotes, SharedTypes = {}, NetworkResults = {}, RuntimeTypes = {}, ClientRendererBridge = {
 		ConsumeNetworkPacket = function(_packet: buffer, _sourceTime: number): () directPacketCount += 1 end,
 	}}
-	local script = {Parent = shared, CorrectionIntake = correction, Replay = {}, Bootstrap = {}}
+	local script = {Parent = shared, CorrectionIntake = correction, Replay = {}, Bootstrap = {}, LifecycleTransport = {}}
 	local workspace = {DescendantAdded = event()}
 	type ReplicationRuntime = {StartClient: (typeof(boids), boolean?) -> ()}
 	local replication: ReplicationRuntime = load(base .. "SimulationReplication/init.luau", {
@@ -243,8 +244,8 @@ local function fixture(renderPacketsDirectly: boolean?)
 	}) :: ReplicationRuntime
 	replication.StartClient(boids, renderPacketsDirectly)
 	local function spawn(group: number, ids: {number}): ()
-		local data = buffer.create(#ids * 37)
-		for row, id in ids do buffer.writeu16(data, (row - 1) * 37, id) end
+		local data = buffer.create(#ids * 41)
+		for row,id in ids do buffer.writeu16(data,(row-1)*41,id); buffer.writeu32(data,(row-1)*41+37,row) end
 		incoming:Fire("Boids", group, data)
 	end
 	local function settle(id: number): ()
@@ -288,7 +289,8 @@ t.test("server deletion cancels takeover without leaking reservations", function
 	f.incoming:Fire("Group", 0, 0)
 	f.localSpawn()
 	f.spawn(0, {65535})
-	f.incoming:Fire("DeleteBoids", {65535}, 10)
+	local deleted=buffer.create(2); buffer.writeu16(deleted,0,65535)
+	f.incoming:Fire("DeleteBoids",deleted,10)
 	t.expect.equal(f.holds[65535], nil)
 	f.settle(65535)
 	f.heartbeat:Fire()
@@ -302,7 +304,8 @@ t.test("direct-render mode routes unreliable packets to the renderer", function(
 	f.jobUpdates:Fire(packet, 12)
 	t.expect.equal(f.directPackets(), 1)
 	f.incoming:Fire("Group", 0, 0)
-	f.incoming:Fire("DeleteBoids", {7}, 11)
+	local deleted=buffer.create(2); buffer.writeu16(deleted,0,7)
+	f.incoming:Fire("DeleteBoids",deleted,11)
 	t.expect.equal(f.directPackets(), 1)
 end)
 
@@ -311,7 +314,8 @@ t.test("queued group replacement reserves rows and handles delete/reuse order", 
 	f.retiring[0] = true
 	f.incoming:Fire("Group", 0, 0)
 	f.spawn(0, {65535, 65534})
-	f.incoming:Fire("DeleteBoids", {65535}, 10)
+	local deleted=buffer.create(2); buffer.writeu16(deleted,0,65535)
+	f.incoming:Fire("DeleteBoids",deleted,10)
 	f.spawn(0, {65535})
 	t.expect.equal(f.holds[65535], 2)
 	t.expect.equal(f.localSpawn(), 65533)
@@ -337,48 +341,8 @@ t.test("group destruction cancels pending collision spawns", function()
 	t.expect.equal(next(f.holds), nil)
 end)
 
-local hitStreamerPath = "src/StarterPlayer/StarterPlayerScripts/BoidHitStreamer.luau"
-if fs.isFile(hitStreamerPath) then
-	t.test("hit reports exclude locals, retired IDs and ownership changes; Stop disconnects", function()
-		local live: {[number]: boolean} = {[1] = true, [65535] = true}
-		local callbacks: {() -> ()} = {}
-		local packets: {buffer} = {}
-		local deletion: (({number}) -> ())?
-		local api = {
-			IsServerBoid = function(id: number): boolean return live[id] == true end,
-			SubscribeDeleted = function(callback: ({number}) -> ()): () -> () deletion = callback; return function(): () deletion = nil end end,
-		}
-		local remote = {FireServer = function(_self: unknown, packet: buffer): () table.insert(packets, packet) end}
-		local function child(self: {[string]: unknown}, name: string): unknown return self[name] end
-		local shared = {WaitForChild = child, Boids = api, Remotes = {WaitForChild = child, ReportBoidHits = remote}}
-		local replicatedStorage = {WaitForChild = child, BoidsReplicated = shared}
-		type HitStreamer = {QueueHits: (number, Vector3, {{boidId: number}}, boolean?) -> (), Stop: () -> ()}
-		local streamer: HitStreamer = load(hitStreamerPath, {require = identity, Vector3 = roblox.Vector3,
-			game = {GetService = function() return replicatedStorage end},
-			task = {delay = function(_seconds: number, callback: () -> ()): () table.insert(callbacks, callback) end},
-		}) :: HitStreamer
-		streamer.QueueHits(1, roblox.Vector3.zero, {{boidId = 42}})
-		t.expect.equal(#callbacks, 0)
-		streamer.QueueHits(1, roblox.Vector3.zero, {{boidId = 1}, {boidId = 65535}, {boidId = 42}})
-		callbacks[1]()
-		t.expect.equal(buffer.readu16(packets[1], 44), 2)
-		t.expect.equal(buffer.readu16(packets[1], 46), 1)
-		t.expect.equal(buffer.readu16(packets[1], 48), 65535)
-		streamer.QueueHits(1, roblox.Vector3.zero, {{boidId = 1}, {boidId = 65535}})
-		assert(deletion)({1})
-		live[1], live[65535] = true, nil
-		callbacks[2]()
-		t.expect.equal(buffer.readu16(packets[2], 44), 0)
-		streamer.QueueHits(1, roblox.Vector3.zero, {}, true)
-		callbacks[3]()
-		t.expect.equal(buffer.readu16(packets[3], 44), 0)
-		streamer.QueueHits(1, roblox.Vector3.zero, {{boidId = 1}})
-		streamer.Stop()
-		t.expect.equal(deletion, nil)
-		callbacks[4]()
-		t.expect.equal(#packets, 3)
-	end)
-end
+-- Game intent-sender coverage lives in tools/verify-combat.luau in the host.
+-- The package retains no dependency on the host's attack protocol.
 
 -- Compile every edited production source without starting a runtime.
 for _, path in {

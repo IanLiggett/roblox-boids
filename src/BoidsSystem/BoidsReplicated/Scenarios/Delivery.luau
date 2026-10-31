@@ -4,7 +4,7 @@
 local RunService = game:GetService("RunService")
 local ScenarioTypes = require(script.Parent.Types)
 local Replication = require(script.Parent.Parent.SimulationReplication)
-local stateRemote: RemoteEvent = script.Parent.Parent.Remotes.SimulationState
+local LifecycleTransport = require(script.Parent.Parent.SimulationReplication.LifecycleTransport)
 local Delivery = {}
 
 type Scenario = {name: string, groups: {ScenarioTypes.GroupDefinition}, benchmark: ScenarioTypes.Benchmark?, context: ScenarioTypes.ScenarioContext}
@@ -26,7 +26,7 @@ function Delivery.StartServer(): ()
 	serverStarted = true
 	Replication.SetServerReplayExtension(function(player: Player): ()
 		for _, record in serverScenarios do
-			stateRemote:FireClient(player, "Scenario", record.name, record.groups, record.benchmark, record.context)
+			LifecycleTransport.SendReplay(player, "Scenario", record.name, record.groups, record.benchmark, record.context)
 		end
 	end)
 end
@@ -35,7 +35,7 @@ function Delivery.Publish(name: string, groups: {ScenarioTypes.GroupDefinition},
 	assert(serverStarted, "Scenario delivery must start before publishing")
 	local record: Scenario = {name=name, groups=groups, benchmark=benchmark, context=context}
 	serverScenarios[name] = record
-	stateRemote:FireAllClients("Scenario", name, groups, benchmark, context)
+	LifecycleTransport.Broadcast("Scenario", name, groups, benchmark, context)
 end
 
 function Delivery.StartClient(): ()

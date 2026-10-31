@@ -71,8 +71,8 @@ local function summarizeNetwork(first: TransportMetrics.Snapshot, last: Transpor
 		local delay = current.queueDelayTotalMs - (if previous then previous.queueDelayTotalMs else 0)
 		recipients[tostring(userId)] = {
 			packetsPerSecond = packets / elapsed, payloadKbps = payload / elapsed / 1000,
-			operatingLimitUtilization = packets / elapsed / 500,
-			batchingTargetPacketsPerSecond = 400,
+			operatingLimitUtilization = packets / elapsed / math.max(1,last.configuredPacketsPerClientSecond),
+			batchingTargetPacketsPerSecond = last.configuredPacketsPerClientSecond*0.8,
 			queueDelayAverageMs = if packets > 0 then delay / packets else 0,
 			queueDelaySessionMaxMs = current.queueDelayMaxMs,
 			baselineCount = current.baselineCount, stateBufferBytes = current.stateBufferBytes,

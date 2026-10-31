@@ -21,6 +21,8 @@ local Replay = require(script.Replay)
 local Bootstrap = require(script.Bootstrap)
 local RuntimeTypes = require(script.Parent.RuntimeTypes)
 local ClientRendererBridge = require(script.Parent.ClientRendererBridge)
+local ReplicaIdentity = require(script.Parent.ReplicaIdentity)
+local LifecycleTransport = require(script.LifecycleTransport)
 local SimulationReplication = {}
 
 
@@ -42,7 +44,7 @@ type ReplicatedTarget = {
 
 type BoidsApi = RuntimeTypes.Replication
 
-local SPAWN_ROW_BYTES = 37
+local SPAWN_ROW_BYTES = 41
 local SPAWN_BATCH_SIZE = 64
 
 local BOID_ID_OFFSET = 0
@@ -63,6 +65,7 @@ local ALIGNMENT_OFFSET = 33
 local COHESION_OFFSET = 34
 local TARGET_BIAS_OFFSET = 35
 local MODEL_OFFSET = 36
+local REPLICA_SERIAL_OFFSET = 37
 
 export type BoidSpawnRecord = Replay.BoidSpawnRecord
 
@@ -133,6 +136,7 @@ local function encodeSpawnRecords(records: {BoidSpawnRecord}, first: number, las
 		buffer.writeu8(data, offset + COHESION_OFFSET, record.cohesion)
 		buffer.writeu8(data, offset + TARGET_BIAS_OFFSET, record.targetBias)
 		buffer.writeu8(data, offset + MODEL_OFFSET, record.model)
+		buffer.writeu32(data, offset + REPLICA_SERIAL_OFFSET, record.replicaSerial)
 
 		row += 1
 	end
@@ -179,7 +183,7 @@ function SimulationReplication.ServerRegisterGroup(groupId: number, defaultModel
 		pendingSpawns = {},
 	}
 
-	simulationState:FireAllClients("Group", groupId, defaultModel, renderColor)
+	LifecycleTransport.Broadcast("Group", groupId, defaultModel, renderColor)
 end
 
 function SimulationReplication.ServerRegisterBoid(
@@ -206,6 +210,7 @@ function SimulationReplication.ServerRegisterBoid(
 	local groupState = getServerGroup(groupId)
 	local record: BoidSpawnRecord = {
 		id = boidId,
+		replicaSerial = ReplicaIdentity.Issue(boidId),
 		position = position,
 		velocity = velocity,
 		maxSpeed = maxSpeed,
@@ -256,7 +261,7 @@ function SimulationReplication.ServerSetTarget(groupId: number, target: Target):
 	local groupState = getServerGroup(groupId)
 	groupState.target = serializeTarget(target)
 	groupState.path = nil
-	simulationState:FireAllClients("Target", groupId, groupState.target)
+	LifecycleTransport.Broadcast("Target", groupId, groupState.target)
 end
 
 function SimulationReplication.ServerSetPath(groupId: number, path: {PathNode}, switchToClosestNode: boolean, loops: boolean, arrivalRadius: number): ()
@@ -272,7 +277,7 @@ function SimulationReplication.ServerSetPath(groupId: number, path: {PathNode}, 
 		loops = loops,
 		arrivalRadius = arrivalRadius,
 	}
-	simulationState:FireAllClients("Path", groupId, groupState.path)
+	LifecycleTransport.Broadcast("Path", groupId, groupState.path)
 end
 
 function SimulationReplication.ServerAddGravityWell(gravityWell: GravityWellState, groupIds: {number}?): ()
@@ -284,11 +289,11 @@ function SimulationReplication.ServerAddGravityWell(gravityWell: GravityWellStat
 		for _, groupId in groupIds do
 			local groupState = getServerGroup(groupId)
 			groupState.groupWells[gravityWell.id] = gravityWell
-			simulationState:FireAllClients("GroupWell", groupId, gravityWell)
+			LifecycleTransport.Broadcast("GroupWell", groupId, gravityWell)
 		end
 	else
 		serverGlobalWells[gravityWell.id] = gravityWell
-		simulationState:FireAllClients("GlobalWell", gravityWell)
+		LifecycleTransport.Broadcast("GlobalWell", gravityWell)
 	end
 end
 
@@ -303,7 +308,7 @@ function SimulationReplication.ServerRemoveGravityWell(gravityWellId: number, gr
 			local groupState = getServerGroup(groupId)
 			if groupState.groupWells[gravityWellId] then
 				groupState.groupWells[gravityWellId] = nil
-				simulationState:FireAllClients("RemoveGroupWell", groupId, gravityWellId)
+				LifecycleTransport.Broadcast("RemoveGroupWell", groupId, gravityWellId)
 				removed = true
 			end
 		end
@@ -314,7 +319,7 @@ function SimulationReplication.ServerRemoveGravityWell(gravityWellId: number, gr
 		return false
 	end
 	serverGlobalWells[gravityWellId] = nil
-	simulationState:FireAllClients("RemoveGlobalWell", gravityWellId)
+	LifecycleTransport.Broadcast("RemoveGlobalWell", gravityWellId)
 	return true
 end
 
@@ -324,7 +329,7 @@ function SimulationReplication.ServerDeleteBoids(boidIds: {number}): ()
 	end
 
 	local removed: {[number]: boolean} = {}
-	for _, boidId in boidIds do removed[boidId] = true end
+	for _, boidId in boidIds do removed[boidId] = true; ReplicaIdentity.Remove(boidId) end
 	for _, groupState in serverGroups do
 		for _, boidId in boidIds do groupState.boids[boidId] = nil end
 		local pending: {BoidSpawnRecord} = {}
@@ -334,7 +339,13 @@ function SimulationReplication.ServerDeleteBoids(boidIds: {number}): ()
 		groupState.pendingSpawns = pending
 	end
 	NetworkResults.DiscardBoids(removed)
-	simulationState:FireAllClients("DeleteBoids", boidIds, workspace:GetServerTimeNow())
+	local cutoff=workspace:GetServerTimeNow()
+	for first=1,#boidIds,1024 do
+		local count=math.min(1024,#boidIds-first+1)
+		local packet=buffer.create(count*2)
+		for row=0,count-1 do buffer.writeu16(packet,row*2,boidIds[first+row]) end
+		LifecycleTransport.Broadcast("DeleteBoids",packet,cutoff)
+	end
 end
 
 function SimulationReplication.ServerDestroyGroup(groupId: number): ()
@@ -343,7 +354,7 @@ function SimulationReplication.ServerDestroyGroup(groupId: number): ()
 	end
 
 	serverGroups[groupId] = nil
-	simulationState:FireAllClients("DestroyGroup", groupId)
+	LifecycleTransport.Broadcast("DestroyGroup", groupId,workspace:GetServerTimeNow())
 end
 
 -- One explicit extension preserves control-plane order without importing policy.
@@ -360,7 +371,8 @@ end
 
 local function sendFullState(player: Player): ()
 	local readState = assert(serverStateReader, "Server replay state reader is not registered")
-	simulationState:FireClient(player, "Begin")
+	LifecycleTransport.BeginReplay(player)
+	LifecycleTransport.SendReplay(player,"Begin")
 
 	local groupIds: {number} = {}
 	for groupId in serverGroups do
@@ -370,32 +382,33 @@ local function sendFullState(player: Player): ()
 
 	for _, groupId in groupIds do
 		local groupState = serverGroups[groupId]
-		simulationState:FireClient(player, "Group", groupState.id, groupState.defaultModel, groupState.renderColor)
+		LifecycleTransport.SendReplay(player, "Group", groupState.id, groupState.defaultModel, groupState.renderColor)
 
 		if groupState.target then
-			simulationState:FireClient(player, "Target", groupState.id, groupState.target)
+			LifecycleTransport.SendReplay(player, "Target", groupState.id, groupState.target)
 		end
 		if groupState.path then
-			simulationState:FireClient(player, "Path", groupState.id, groupState.path)
+			LifecycleTransport.SendReplay(player, "Path", groupState.id, groupState.path)
 		end
 
 		local fire = function(kind: string, replicatedGroupId: number, data: buffer): ()
-			simulationState:FireClient(player, kind, replicatedGroupId, data)
+			LifecycleTransport.SendReplay(player, kind, replicatedGroupId, data)
 		end
-		fireSpawnRecords(fire, groupState.id, Replay.CopyBoids(groupState.boids, readState))
+		Replay.ForEachBatch(groupState.boids,readState,SPAWN_BATCH_SIZE,function(records: {BoidSpawnRecord}): () fireSpawnRecords(fire,groupState.id,records) end)
 
 		for _, gravityWell in groupState.groupWells do
-			simulationState:FireClient(player, "GroupWell", groupState.id, gravityWell)
+			LifecycleTransport.SendReplay(player, "GroupWell", groupState.id, gravityWell)
 		end
 	end
 
 	for _, gravityWell in serverGlobalWells do
-		simulationState:FireClient(player, "GlobalWell", gravityWell)
+		LifecycleTransport.SendReplay(player, "GlobalWell", gravityWell)
 	end
 
 	if serverReplayExtension then serverReplayExtension(player) end
 
-	simulationState:FireClient(player, "Complete")
+	LifecycleTransport.SendReplay(player, "Complete")
+	LifecycleTransport.EndReplay(player)
 end
 
 local serverStarted = false
@@ -403,7 +416,12 @@ function SimulationReplication.StartServer(): ()
 	if not RunService:IsServer() or serverStarted then return end
 	assert(serverStateReader, "Server state reader must be bound before replication starts")
 	serverStarted = true
-	local bootstrap: Bootstrap.Admission = Bootstrap.New(sendFullState)
+	LifecycleTransport.Start(simulationState)
+	local bootstrap: Bootstrap.Admission = Bootstrap.New(function(player: Player): ()
+		local ok,failure=pcall(sendFullState,player)
+		LifecycleTransport.EndReplay(player)
+		if not ok then error(failure) end
+	end)
 	requestSimulationState.OnServerEvent:Connect(function(player: Player): ()
 		bootstrap.Request(player, workspace:GetServerTimeNow())
 	end)
@@ -416,7 +434,7 @@ function SimulationReplication.StartServer(): ()
 				groupState.pendingSpawns = {}
 
 				local fire = function(kind: string, groupId: number, data: buffer): ()
-					simulationState:FireAllClients(kind, groupId, data)
+					LifecycleTransport.Broadcast(kind, groupId, data)
 				end
 				fireSpawnRecords(fire, groupState.id, records)
 			end
@@ -452,6 +470,7 @@ local function applySpawnRow(boids: BoidsApi, group: Group, data: buffer, offset
 		buffer.readu8(data, offset + MODEL_OFFSET),
 		boidId
 	)
+	ReplicaIdentity.Set(boidId,buffer.readu32(data,offset+REPLICA_SERIAL_OFFSET))
 end
 
 local function applySpawnBatch(boids: BoidsApi, groups: {[number]: Group}, groupId: number, data: buffer, pending: {[number]: PendingClientSpawn}): ()
@@ -595,9 +614,12 @@ function SimulationReplication.StartClient(boids: BoidsApi, renderPacketsDirectl
 				boids.RemoveGravityWell(b :: number, {group})
 			end
 		elseif kind == "DeleteBoids" then
-			if type(a) == "table" then
-				if not renderPacketsDirectly then assert(corrections).Retire(a :: {number}, b :: number?) end
-				for _, boidId in a :: {number} do
+			if typeof(a) == "buffer" then
+				local ids: {number}={}
+				for offset=0,buffer.len(a)-1,2 do table.insert(ids,buffer.readu16(a,offset)) end
+				if not renderPacketsDirectly then assert(corrections).Retire(ids, b :: number?) end
+				for _, boidId in ids do
+					ReplicaIdentity.Remove(boidId,b :: number?)
 					if pendingSpawns[boidId] then boids.ReleaseServerBoidId(boidId) end
 					pendingSpawns[boidId], boidGroups[boidId] = nil, nil
 
@@ -609,6 +631,7 @@ function SimulationReplication.StartClient(boids: BoidsApi, renderPacketsDirectl
 			local group = groups[a :: number]
 			for id, groupId in boidGroups do
 				if groupId == a then
+					ReplicaIdentity.Remove(id,b :: number?)
 					table.insert(retiredIds, id)
 					if pendingSpawns[id] then boids.ReleaseServerBoidId(id) end
 					pendingSpawns[id], boidGroups[id] = nil, nil
@@ -648,8 +671,15 @@ function SimulationReplication.StartClient(boids: BoidsApi, renderPacketsDirectl
 	simulationState.OnClientEvent:Connect(function(kind: string, a: unknown, b: unknown, c: unknown, d: unknown): ()
 		-- Protect even rows queued behind a retiring group. Occupancy alone
 		-- cannot distinguish these future authoritative IDs from local space.
-		reserveSpawnRows(kind, b, boids.ReserveServerBoidId)
-		table.insert(stateQueue, {kind, a, b, c, d})
+		if kind=="Batch" then
+			for _,message in a :: {{kind: string,args: {unknown}}} do
+				reserveSpawnRows(message.kind,message.args[2],boids.ReserveServerBoidId)
+				table.insert(stateQueue,{message.kind,message.args[1],message.args[2],message.args[3],message.args[4]})
+			end
+		else
+			reserveSpawnRows(kind, b, boids.ReserveServerBoidId)
+			table.insert(stateQueue, {kind, a, b, c, d})
+		end
 		drainState()
 	end)
 	RunService.Heartbeat:Connect(function(): ()

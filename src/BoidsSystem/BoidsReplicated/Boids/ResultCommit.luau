@@ -13,6 +13,8 @@ local Cells = require(script.Parent.Cells)
 local ViewerLOD = require(script.Parent.JobBuilder.ViewerLOD)
 local Benchmarkers = require(BoidsReplicated.Dependencies.Benchmarker.Value :: typeof(game.ReplicatedStorage.ExternalLibraries.Benchmarker))
 local CorrectionDivergence = require(BoidsReplicated.CorrectionDivergence)
+local ReplicaIdentity = require(BoidsReplicated.ReplicaIdentity)
+local RuntimeTypes = require(BoidsReplicated.RuntimeTypes)
 local ResultCommit = {}
 local correctionSampling = false
 local correctionRevision = 0
@@ -42,6 +44,43 @@ type PostMergeObserver = (batch: CompletedBoidBatch) -> ()
 
 local postMergeObservers: {[number]: PostMergeObserver} = {}
 local nextPostMergeObserverId = 0
+local completedCellObservers: {[number]: (RuntimeTypes.CompletedCells) -> ()} = {}
+local nextCellObserverId = 0
+
+function ResultCommit.SubscribeCompletedCells(observer: (RuntimeTypes.CompletedCells) -> ()): () -> ()
+	nextCellObserverId += 1
+	local id = nextCellObserverId
+	completedCellObservers[id] = observer
+	return function(): () completedCellObservers[id] = nil end
+end
+
+local function copyBuffer(source: buffer): buffer
+	local copy = buffer.create(buffer.len(source))
+	buffer.copy(copy,0,source)
+	return copy
+end
+
+local function emitCompletedCells(groupId: number,result: WorkerJobResult): ()
+	if next(completedCellObservers) == nil then return end
+	local preparationStart=os.clock()
+	local batch: RuntimeTypes.CompletedCells = {groupId=groupId,completionTime=result.completionTime,replicaCeiling=ReplicaIdentity.GetCeiling(),cells={},migrants={}}
+	for _,cell in result.jobCells do
+		local pages: {{data: buffer,dead: buffer,cursor: number}} = {}
+		for _,page in cell.pages.pages do
+			table.insert(pages,{data=copyBuffer(page.data),dead=copyBuffer(page.dead),cursor=page.cursor})
+		end
+		table.insert(batch.cells,{id=cell.id,origin=cell.origin,pages=pages})
+	end
+	for cellId,rows in result.movedBoids do table.insert(batch.migrants,{cellId=tonumber(cellId) :: number,rows=table.clone(rows)}) end
+	-- Independently owned completed buffers, read-only by subscription contract.
+	RuntimeMetrics.Add(metrics,"observerPreparationMs",(os.clock()-preparationStart)*1000)
+	local callbackStart=os.clock()
+	for _,observer in completedCellObservers do
+		local ok,failure=pcall(observer,batch)
+		if not ok then warn("Boids completed-cell observer failed: "..tostring(failure)) end
+	end
+	RuntimeMetrics.Add(metrics,"observerCallbacksMs",(os.clock()-callbackStart)*1000)
+end
 
 function ResultCommit.SubscribePostMerge(observer: PostMergeObserver): () -> ()
 	nextPostMergeObserverId += 1
@@ -215,6 +254,7 @@ local function handleJobResults(group: Group, job: Job, jobResults: WorkerJobRes
 	for _, scheduledCell in job.jobCells do
 		if not returnedCells[scheduledCell.id] then isComplete = false; break end
 	end
+	if isComplete then emitCompletedCells(group.id,jobResults) end
 	local snapshotDeliveryStart = os.clock()
 	if isComplete then
 		if jobResults.snapshotGroups then

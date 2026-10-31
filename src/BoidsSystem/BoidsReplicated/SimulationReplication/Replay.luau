@@ -3,7 +3,7 @@
 local Replay = {}
 
 export type BoidSpawnRecord = {
-	id: number, position: Vector3, velocity: Vector3,
+	id: number, replicaSerial: number, position: Vector3, velocity: Vector3,
 	maxSpeed: number, minSpeed: number, sight: number, avoidance: number,
 	separation: number, repulsion: number, repulsionStrength: number,
 	alignment: number, cohesion: number, targetBias: number, model: number,
@@ -26,6 +26,24 @@ function Replay.CopyBoids(recipes: {[number]: BoidSpawnRecord}, readState: State
 		return a.id < b.id
 	end)
 	return records
+end
+
+function Replay.ForEachBatch(recipes: {[number]: BoidSpawnRecord},readState: StateReader,batchSize: number,consume: ({BoidSpawnRecord}) -> ()): ()
+	local ids: {number}={}
+	for id in recipes do table.insert(ids,id) end
+	table.sort(ids)
+	local batch: {BoidSpawnRecord}={}
+	for _,id in ids do
+		local recipe=recipes[id]
+		if not recipe then continue end
+		local position,velocity=readState(id)
+		if not position or not velocity then continue end
+		local record=table.clone(recipe)
+		record.position,record.velocity=position,velocity
+		table.insert(batch,record)
+		if #batch==batchSize then consume(batch); batch={} end
+	end
+	if #batch>0 then consume(batch) end
 end
 
 return Replay

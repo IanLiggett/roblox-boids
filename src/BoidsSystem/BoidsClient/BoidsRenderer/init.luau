@@ -31,7 +31,8 @@ local Quantization = require(BoidsReplicated.Quantization)
 local PacketCodec = require(BoidsReplicated.NetworkResults.PacketCodec)
 local LODConfig = require(BoidsReplicated.LODConfig)
 local BoidCollisionConfig = require(BoidsReplicated.BoidCollisionConfig)
-local BoidQueryIndex = require(BoidsReplicated.BoidQueryIndex)
+local BoidQueryIndex = require(BoidsReplicated.CollisionIndex)
+local ReplicaIdentity = require(BoidsReplicated.ReplicaIdentity)
 local QueryIndexConfig = require(BoidsReplicated.QueryIndexConfig)
 
 local Measurements = require(script.Measurements)
@@ -556,7 +557,7 @@ local function renderCell(cell: RenderCell, now: number, queryIndex: BoidQueryIn
 		if queryIndex then
 			local boidId = boidIdByRenderIndex[renderIndex]
 			if visibleOpacity > 0 then
-				queryIndex:Update(boidId, renderPositionByIndex[renderIndex], BoidCollisionConfig.GetRadius(boidModelById[boidId]))
+				queryIndex:Update(boidId,renderPositionByIndex[renderIndex],BoidCollisionConfig.GetRadius(boidModelById[boidId]),ReplicaIdentity.Get(boidId),now)
 			else
 				queryIndex:Remove(boidId)
 			end
@@ -731,6 +732,7 @@ local lastSnapshotTimeByBoid:{[number]: number} = {}
 local function acceptSnapshotRow(boidId: number, completionTime: number, now: number, px: number, py: number, pz: number, vx: number, vy: number, vz: number): ()
 	-- Pre-spawn or retired rows must not seed deduplication for a later lifetime.
 	if not renderIndexByBoid[boidId] then return end
+	if completionTime<=ReplicaIdentity.GetSourceCutoff(boidId) then return end
 	local lastTime = lastSnapshotTimeByBoid[boidId]
 	if lastTime and completionTime <= lastTime then
 		return
@@ -811,7 +813,7 @@ seedClientQueryIndex = function(): ()
 		for _, renderIndex in cell.renderIndices do
 			if opacityByIndex[renderIndex] <= 0 then continue end
 			local boidId = boidIdByRenderIndex[renderIndex]
-			queryIndex:Update(boidId, renderTransforms[renderIndex].Position, BoidCollisionConfig.GetRadius(boidModelById[boidId]))
+			queryIndex:Update(boidId,renderTransforms[renderIndex].Position,BoidCollisionConfig.GetRadius(boidModelById[boidId]),ReplicaIdentity.Get(boidId),workspace:GetServerTimeNow())
 		end
 	end
 end
@@ -1142,6 +1144,8 @@ end
 
 export type QueryHit = {
 	boidId: number,
+	replicaSerial: number?,
+	proxyPosition: Vector3?,
 	Instance: BasePart?,
 	Position: Vector3,
 	Distance: number,
@@ -1194,9 +1198,27 @@ function BoidsRenderer.GetQueryMetrics(): BoidQueryIndex.Metrics
 			exactTestCount = 0,
 			p50Ms = 0,
 			p95Ms = 0,
+			membershipCount = 0,
+			incompleteEntries = 0,
+			gatheredRows = 0,
+			reusedCandidateRows = 0,
 		}
 	end
 	return clientQueryIndex:GetMetrics()
+end
+
+function BoidsRenderer.QueryAttack(request: BoidQueryIndex.Request,budget: BoidQueryIndex.Budget): (BoidQueryIndex.Result,{QueryHit})
+	local index = getClientQueryIndex()
+	if not index then return {hits={},cellVisits=0,candidateTests=0,isTruncated=true,hasCoverage=false,elapsedMs=0},{} end
+	local result = index:Query(request,budget)
+	local hits: {QueryHit} = {}
+	for _,hit in result.hits do
+		local serial = ReplicaIdentity.Get(hit.boidId)
+		if serial and serial==hit.replicaSerial then
+			table.insert(hits,{boidId=hit.boidId,replicaSerial=serial,proxyPosition=hit.proxyPosition,Instance=getRenderedInstance(hit.boidId),Position=hit.position,Distance=hit.distance,Normal=hit.normal})
+		end
+	end
+	return result,hits
 end
 
 -- Value-only measurements; testing owns activation/reset/export policy.

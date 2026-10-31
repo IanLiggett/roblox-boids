@@ -143,11 +143,12 @@ return function(t: UnitTest.Context): ()
 		consider(state, 300, Vector3.one * 20, Vector3.yAxis, 2)
 		local byTime = prediction.BuildSnapshots(state, 100, 0)
 		local packets = codec.ConvertSimulationSnapshotToPackets(byTime[1])
-		t.expect.equal(prediction.RecordSent(state, packets[1], 1, 1), 120)
-		t.expect.equal(state.count, 6)
-		t.expect.equal(state.rowsByTime[1], 5)
+		local capacity=math.floor((codec.MAX_PACKET_BYTES-codec.CELL_HEADER_BYTES)/codec.BOID_ROW_BYTES)
+		t.expect.equal(prediction.RecordSent(state, packets[1], 1, 1), capacity)
+		t.expect.equal(state.count,126-capacity)
+		t.expect.equal(state.rowsByTime[1],125-capacity)
 		t.expect.equal(state.rowsByTime[2], 1)
-		t.expect.equal(send(state), 6)
+		t.expect.equal(send(state),126-capacity)
 		t.expect.equal(next(state.rowsByTime), nil)
 		t.expect.equal(state.baselineCount, 126)
 	end)
@@ -208,5 +209,40 @@ return function(t: UnitTest.Context): ()
 		first.recipients[1234].baselineCount = 999
 		t.expect.equal(transportMetrics.Read().recipients[1234].baselineCount, 2)
 		transportMetrics.RemoveRecipient(1234)
+	end)
+
+	t.test("pending overflow and bounded assembly preserve dense counts",function()
+		local state=prediction.New()
+		for id=0,4999 do consider(state,id,Vector3.one*20,Vector3.xAxis,1) end
+		t.expect.equal(state.count,4096)
+		t.expect.equal(state.capacity,4096)
+		local byTime,times=prediction.BuildSnapshots(state,100,0,nil,128,os.clock()+10)
+		t.expect.equal(#times,1)
+		local selected=0
+		for _,cell in byTime[1] do selected+=cell.boidCount end
+		t.expect.equal(selected,128)
+		for _,packet in codec.ConvertSimulationSnapshotToPackets(byTime[1]) do prediction.RecordSent(state,packet,1,100) end
+		t.expect.equal(state.count,4096-128)
+		t.expect.equal(state.rowsByTime[1],state.count)
+		local ids=0
+		for _ in state.slotById do ids+=1 end
+		t.expect.equal(ids,state.count)
+	end)
+
+	t.test("baseline page eviction and retirement repair validity accounting",function()
+		local state=prediction.New()
+		for page=0,79 do
+			consider(state,page*256,Vector3.one*20,Vector3.xAxis,page+1)
+			send(state)
+		end
+		t.expect.equal(state.pageCount,64)
+		t.expect.equal(state.baselineCount,64)
+		t.expect.truthy(prediction.GetBufferBytes(state)<=64*256*41+4096*22)
+		for page=0,79 do prediction.Discard(state,page*256) end
+		t.expect.equal(state.baselineCount,0)
+		for _,count in state.pageCounts do t.expect.equal(count,0) end
+		t.expect.truthy(consider(state,0,Vector3.one*20,Vector3.xAxis,1))
+		t.expect.equal(send(state),1)
+		t.expect.equal(state.baselineCount,1)
 	end)
 end
