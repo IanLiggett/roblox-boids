@@ -22,7 +22,11 @@ Boid IDs share all 65,536 u16 slots in each process. The coordinator allocates s
 
 Renderer cell lists are partitioned by replica/local ownership. Binary cell-level distance visibility skips fully transparent membership work; camera culling immediately suspends offscreen scheduling without changing opacity or traversing members. Both retain snapshot/lifecycle intake and cached observation poses. Distance visibility transitions share the render budget and cap Instance transparency writes separately; client hit indexing excludes fully transparent rows.
 
-Server.BoidQueryIndexServer owns authoritative index lifetime and copied queries. Client queries and rendered-pose reads are package-owned too. Hosts consume results without acquiring mutable storage/index ownership. Diagnostics expose values, not scheduling authority.
+Server.BoidQueryIndexServer owns authoritative index lifetime and copied queries. CollisionIndex provides bounded sphere-proxy segments/sweeps, spheres and oriented boxes with optional shared history. It consumes coalesced immutable completed-cell copies outside result merge; row, cell, candidate, result, membership and elapsed limits expose truncation/incomplete coverage. Rendered-pose queries index the actual displayed poses. Hosts own gameplay tolerance and consequences without acquiring mutable index/storage handles. Diagnostics expose values, not scheduling authority.
+
+ReplicaIdentity issues session-monotonic network serials separately from existing process-local lifetime tokens. Reliable spawn rows carry the serial; query hits carry copied ID/serial references. PrecisionRegions supplies bounded generic interest quotas and a short scheduling/network promotion, with no combat imports or extra population scan. A host may explicitly supply the query maintenance budget before configuration locks; otherwise the standalone package supplies it.
+
+LifecycleTransport paces reliable ordered control, bootstrap and packed deletion batches, sharing packet/byte credits per recipient and globally. Replaceable force controls coalesce without merging logical host effects. Reliable command batches reserve all arriving spawn IDs before deferred intake. Pose transport retains original source times and last-actually-sent baselines with bounded recipient storage/assembly. Both server/client wire codecs must ship together; no old report remote or compatibility intake remains.
 
 ## Scenarios and hosts
 

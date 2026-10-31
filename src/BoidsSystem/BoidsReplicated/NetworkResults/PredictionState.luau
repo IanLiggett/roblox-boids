@@ -20,10 +20,11 @@ export type State = {
 	count: number,
 	slotById: {[number]: number},
 	rowsByTime: {[number]: number},
+	pageCounts: {[number]: number},pageOrder: {number},pageCursor: number,pendingCursor: number,buildCursor: number,
 }
 
 function PredictionState.New(): State
-	return {pages = {}, pageCount = 0, baselineCount = 0, pending = buffer.create(0), capacity = 0, count = 0, slotById = {}, rowsByTime = {}}
+	return {pages = {}, pageCount = 0, baselineCount = 0, pending = buffer.create(0), capacity = 0, count = 0, slotById = {}, rowsByTime = {},pageCounts={},pageOrder={},pageCursor=0,pendingCursor=0,buildCursor=0}
 end
 
 local function baselineOffset(id: number): number
@@ -76,6 +77,10 @@ function PredictionState.Consider(
 		local remaining = state.rowsByTime[oldTime] - 1
 		state.rowsByTime[oldTime] = if remaining > 0 then remaining else nil
 	else
+		if state.count>=4096 then
+			state.pendingCursor=state.pendingCursor%state.count+1
+			removePending(state,buffer.readu16(state.pending,(state.pendingCursor-1)*PENDING_BYTES))
+		end
 		state.count += 1
 		slot = state.count
 		state.slotById[id] = slot
@@ -103,6 +108,7 @@ function PredictionState.Discard(state: State, id: number): ()
 	if page and buffer.readu8(page, offset) ~= 0 then
 		buffer.writeu8(page, offset, 0)
 		state.baselineCount -= 1
+		state.pageCounts[id//PAGE_ROWS]-=1
 	end
 end
 
@@ -113,14 +119,21 @@ function PredictionState.GetReadyTime(state: State, id: number, minSendIntervalS
 	return buffer.readf64(page, offset + 33) + minSendIntervalSeconds
 end
 
-function PredictionState.BuildSnapshots(state: State, now: number, minSendIntervalSeconds: number): ({[number]: SharedTypes.SimulationSnapshot}, {number}, number)
+function PredictionState.BuildSnapshots(state: State, now: number, minSendIntervalSeconds: number,intervalForId: ((number) -> number)?,maxVisits: number?,deadline: number?): ({[number]: SharedTypes.SimulationSnapshot}, {number}, number)
 	local byTime: {[number]: SharedTypes.SimulationSnapshot} = {}
 	local cellsByTime: {[number]: {[number]: SharedTypes.CellSnapshot}} = {}
 	local times: {number} = {}
 	local nextReadyTime = math.huge
-	for slot = 0, state.count - 1 do
+	local visits=math.min(state.count,maxVisits or state.count)
+	local visited=0
+	for visit = 0,visits-1 do
+		if deadline and os.clock()>=deadline then nextReadyTime=math.min(nextReadyTime,now); break end
+		local slot=(state.buildCursor+visit)%state.count
+		visited+=1
 		local offset = slot * PENDING_BYTES
-		local readyTime = PredictionState.GetReadyTime(state, buffer.readu16(state.pending, offset), minSendIntervalSeconds)
+		local id = buffer.readu16(state.pending,offset)
+		local interval = if intervalForId then intervalForId(id) else minSendIntervalSeconds
+		local readyTime = PredictionState.GetReadyTime(state,id,interval)
 		if now < readyTime then
 			nextReadyTime = math.min(nextReadyTime, readyTime)
 			continue
@@ -151,6 +164,8 @@ function PredictionState.BuildSnapshots(state: State, now: number, minSendInterv
 		buffer.copy(cell.networkBoids, cell.boidCount * ROW_BYTES, state.pending, offset, ROW_BYTES)
 		cell.boidCount += 1
 	end
+	if state.count>0 then state.buildCursor=(state.buildCursor+visited)%state.count end
+	if visited<state.count then nextReadyTime=math.min(nextReadyTime,now) end
 	table.sort(times)
 	return byTime, times, nextReadyTime
 end
@@ -163,12 +178,22 @@ function PredictionState.RecordSent(state: State, packet: buffer, sourceTime: nu
 			local pageIndex = id // PAGE_ROWS
 			local page = state.pages[pageIndex]
 			if not page then
-				page = buffer.create(PAGE_ROWS * BASELINE_BYTES)
+				if state.pageCount>=64 then
+					state.pageCursor=state.pageCursor%64+1
+					local retired=state.pageOrder[state.pageCursor]
+					page=state.pages[retired]
+					state.baselineCount-=state.pageCounts[retired]
+					state.pages[retired]=nil; state.pageCounts[retired]=nil
+					buffer.fill(page,0,0); state.pageOrder[state.pageCursor]=pageIndex
+				else
+					page=buffer.create(PAGE_ROWS*BASELINE_BYTES)
+					state.pageCount+=1; state.pageOrder[state.pageCount]=pageIndex
+				end
 				state.pages[pageIndex] = page
-				state.pageCount += 1
+				state.pageCounts[pageIndex]=0
 			end
 			local base = baselineOffset(id)
-			if buffer.readu8(page, base) == 0 then state.baselineCount += 1 end
+			if buffer.readu8(page, base) == 0 then state.baselineCount += 1; state.pageCounts[pageIndex]+=1 end
 			buffer.writeu8(page, base, 1)
 			buffer.writef32(page, base + 1, ox + px)
 			buffer.writef32(page, base + 5, oy + py)

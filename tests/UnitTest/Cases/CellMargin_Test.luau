@@ -8,7 +8,7 @@ return function(t: UnitTest.Context): ()
 	local storage = require(package.BoidStorage)
 	local codec = require(package.NetworkResults.PacketCodec)
 	local SharedTypes = require(package.SharedTypes)
-	local BoidQueryIndex = require(package.BoidQueryIndex)
+	local BoidQueryIndex = require(package.CollisionIndex)
 
 	t.test("storage and snapshots preserve expanded positions with unchanged row sizes", function()
 		local tolerance = q.POSITION_RANGE / 255 / 2 + 0.00001

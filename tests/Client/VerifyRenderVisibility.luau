@@ -9,6 +9,7 @@ local BoidsReplicated = (ReplicatedStorage:WaitForChild("BoidsReplicated") :: In
 local PacketCodec = require(BoidsReplicated.NetworkResults.PacketCodec)
 local LODConfig = require(BoidsReplicated.LODConfig)
 local Quantization = require(BoidsReplicated.Quantization)
+local ReplicaIdentity = require(BoidsReplicated.ReplicaIdentity)
 
 return function(): {hiddenMotion: number, hiddenWrites: number, mixedOwnership: boolean, reusedId: boolean}
 	assert(RunService:IsClient(), "Run in the normal client runtime")
@@ -22,6 +23,7 @@ return function(): {hiddenMotion: number, hiddenWrites: number, mixedOwnership: 
 	for _, id in ids do assert(not renderer.GetRenderedBoidState(id), "Verification ID already in use") end
 	assert(not renderer.HasRenderedGroup(remoteGroup) and not renderer.HasRenderedGroup(localGroup), "Verification groups already in use")
 	local sourceTime = workspace:GetServerTimeNow()
+	local retiredSourceTime=sourceTime
 	local lifetime = math.floor(sourceTime * 1000)
 	local origin: Vector3 = Vector3.new(3008, 0, 0)
 	local point: Vector3 = origin + Vector3.one * 16
@@ -112,6 +114,14 @@ return function(): {hiddenMotion: number, hiddenWrites: number, mixedOwnership: 
 		assert(part(localGroup, ids[3]).LocalTransparencyModifier == 0, "Camera rotation changed opacity")
 
 		spawn(remoteGroup, ids[1], lifetime + 1)
+		-- Reliable retirement survives numeric ID reuse. A delayed old wire
+		-- row must not seed the new render lifetime's source-time acceptance.
+		ReplicaIdentity.Remove(ids[1],retiredSourceTime)
+		local oldCell=PacketCodec.NewCellSnapshot(1,origin)
+		PacketCodec.AppendBoid(oldCell,ids[1],Vector3.one*48,Vector3.zero)
+		local oldPacket=PacketCodec.ConvertSimulationSnapshotToPackets({oldCell})[1]
+		renderer.ConsumeNetworkPacket(oldPacket,retiredSourceTime)
+		assert(renderer.GetRenderedBoidState(ids[1]).snapshotAt==nil,"Old pose crossed a reused-ID retirement fence")
 		publish(ids[1], point + Vector3.xAxis * 64)
 		publish(ids[2], point + Vector3.xAxis * 64)
 		desired = CFrame.lookAt(networkCenter + Vector3.zAxis * 180, point)

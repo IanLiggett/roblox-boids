@@ -32,6 +32,8 @@ For examples, read the [Scenario catalog](src/BoidsSystem/Server/Scenarios/Regis
 
 The included Scenarios are mainly test and development harnesses. Games can create and manage their own boid groups directly through the [Boids API](docs/api.md); they do not need to use the Scenario registry or scenario startup modules.
 
+Hosts query boids through the copied [server query facade](src/BoidsSystem/Server/BoidQueryIndexServer.luau) or renderer `QueryAttack`, using the [shape, budget and result contracts](src/BoidsSystem/BoidsReplicated/CollisionIndex.luau). Boids remain non-queryable. Network identity is `{id, replicaSerial}` within one session; neither a numeric ID nor a geometric hit grants gameplay authority. Hosts own authorization, health, damage and effect lifetimes. Queries expose incomplete coverage and target/work truncation so hosts can choose explicit approximation policy.
+
 ## Use from source with Rojo
 
 Map `src/BoidsSystem` to ServerScriptService.BoidsSystem and the two vendored libraries to ReplicatedStorage.ExternalLibraries, retaining metadata/reference attributes. The project file shows the mappings. PackageBootstrap moves BoidsReplicated and BoidsClient into their runtime services; do not also map duplicate runtime copies.
@@ -45,6 +47,8 @@ Host launchers call server `Server.Testing.ScenarioTestInitializer.Start(serverH
 The standalone project maps `ServerStorage.UnitTest`. Before Play, generate its production-code fixtures using `UnitTest.PrepareWorkerFixture` and `UnitTest.PrepareSchedulerFixture` from a privileged Studio Edit tool. During Play, run `require(game.ServerStorage.UnitTest.RunUnitTest)()` in the server context. Never start another coordinator from an inspection VM to read live state. A Rojo build is not a complete type check.
 
 For the full suite, pass `nil, 12` to the runner: the actual five-second Actor deadline test exceeds the default five-second per-test timeout. With Lune 0.11.0, run `lune run tests/cli/VerifyDynamicIds.luau` from this package root for isolated allocation, production-coordinator, and client-intake checks without Studio. The script also accepts the host root as its working directory.
+
+`lune run tests/cli/VerifyCollision.luau` checks bounded geometry, a mathematical oracle, history, copied batch reuse and identity reuse without a host game. Kernel timings do not establish native, rendering, mobile or network capacity.
 
 The typed WorkerCore and scheduler fixtures are also checked into source so Studio can analyze their contracts before Play. Run `lune run tests/cli/VerifyFixtureSources.luau` to check that they match production source and the Studio generators. `--emit` prints replacement sources as JSON for a reviewed update; it does not write files. The scheduler fixture extracts only the production dispatch slice, with a typed injected environment. Worker and execution tests still require separate clones to preserve module-local isolation.
 
