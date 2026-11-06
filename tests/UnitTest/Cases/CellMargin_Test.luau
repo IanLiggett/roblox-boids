@@ -37,7 +37,7 @@ return function(t: UnitTest.Context): ()
 		for offset, ox, oy, oz, count in codec.ForEachCellHeader(packet) do
 			t.expect.equal(Vector3.new(ox, oy, oz), origin)
 			t.expect.equal(count, 1)
-			for id, x, y, z in codec.ForEachBoid(packet, offset, count) do
+			for id, x, y, z in codec.ForEachPacketBoid(packet, offset, count) do
 				t.expect.equal(id, 17)
 				t.expect.near(x, q.CELL_SIZE + q.CELL_MARGIN, tolerance)
 				t.expect.near(y, x)

@@ -45,9 +45,9 @@ local function appendBoidUnchecked(snapshot: CellSnapshot, boidId: number, local
 	buffer.writeu8(data, offset + 2, Quantization.quantizePositionAxis(localPosition.X, MAX_U8))
 	buffer.writeu8(data, offset + 3, Quantization.quantizePositionAxis(localPosition.Y, MAX_U8))
 	buffer.writeu8(data, offset + 4, Quantization.quantizePositionAxis(localPosition.Z, MAX_U8))
-	buffer.writeu8(data, offset + 5, Quantization.quantizeVelocityAxis(velocity.X, Quantization.VELOCITY_MIN, Quantization.VELOCITY_RANGE, MAX_U8))
-	buffer.writeu8(data, offset + 6, Quantization.quantizeVelocityAxis(velocity.Y, Quantization.VELOCITY_MIN, Quantization.VELOCITY_RANGE, MAX_U8))
-	buffer.writeu8(data, offset + 7, Quantization.quantizeVelocityAxis(velocity.Z, Quantization.VELOCITY_MIN, Quantization.VELOCITY_RANGE, MAX_U8))
+	buffer.writeu8(data, offset + 5, Quantization.QuantizeSnapshotVelocityAxis(velocity.X))
+	buffer.writeu8(data, offset + 6, Quantization.QuantizeSnapshotVelocityAxis(velocity.Y))
+	buffer.writeu8(data, offset + 7, Quantization.QuantizeSnapshotVelocityAxis(velocity.Z))
 	snapshot.boidCount = index + 1
 end
 

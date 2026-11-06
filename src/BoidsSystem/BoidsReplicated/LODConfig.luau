@@ -35,6 +35,8 @@ export type ClientConfig = {
 	visibleRenderBands: RenderBands,
 	offscreenHertz: number,
 	maxRenderBoidsPerFrame: number,
+	maxRenderMsPerFrame: number,
+	maxMobileRenderMsPerFrame: number,
 	peripheralLodDistanceScale: number,
 }
 
@@ -87,6 +89,8 @@ local presets: {[PresetName]: Config} = {
 			offscreenHertz = 0.2,
 		peripheralLodDistanceScale = 0.50,
 			maxRenderBoidsPerFrame = 100000,
+			maxRenderMsPerFrame = 4,
+			maxMobileRenderMsPerFrame = 3,
 		},
 		serverSimulation = {
 			nearDistance = 0,
@@ -146,6 +150,8 @@ local presets: {[PresetName]: Config} = {
 			offscreenHertz = 0.5,
 		peripheralLodDistanceScale = 0.30,
 			maxRenderBoidsPerFrame = 100000,
+			maxRenderMsPerFrame = 4,
+			maxMobileRenderMsPerFrame = 3,
 		},
 		serverSimulation = {
 			nearDistance = 0,
@@ -203,6 +209,8 @@ local presets: {[PresetName]: Config} = {
 			offscreenHertz = 0.5,
 			peripheralLodDistanceScale = 0.15,
 			maxRenderBoidsPerFrame = 100000,
+			maxRenderMsPerFrame = 4,
+			maxMobileRenderMsPerFrame = 3,
 		},
 		serverSimulation = {
 			nearDistance = 0,

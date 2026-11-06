@@ -15,6 +15,7 @@ local NetworkResults = {
     ConvertSimulationSnapshotToPackets = PacketCodec.ConvertSimulationSnapshotToPackets,
     ForEachCellHeader = PacketCodec.ForEachCellHeader,
     ForEachBoid = PacketCodec.ForEachBoid,
+    ForEachPacketBoid = PacketCodec.ForEachPacketBoid,
     StartServer = ServerTransport.StartServer,
     DiscardBoids = ServerTransport.DiscardBoids,
     EnqueueSimulationSnapshotForPlayers = ServerTransport.EnqueueSimulationSnapshotForPlayers,

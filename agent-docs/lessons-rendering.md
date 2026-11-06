@@ -1,5 +1,41 @@
 # Rendering Lessons
 
+[RENDERING] Culling must enclose displayed poses
+
+Tags: rendering, culling, snapshot migration, facing-first smoothing, frozen stragglers
+
+Rejected
+
+Treating a snapshot cell's fixed spatial bounds as bounds on its members' cached displayed poses.
+
+Reason
+
+A latest snapshot can migrate behind the camera while its smoothed pose remains onscreen. Skipping the new cell then abandons that visible pose indefinitely, even though snapshots remain fresh; additional scheduling fairness cannot service a culled cell.
+
+Current guardrail
+
+Conservatively include cached visible poses in cell culling bounds at migration and ordinary render visits. Shrink only from a complete pass's accumulated bound, including incoming members. Preserve hidden suspension clocks and bounded work without a separate hidden-population scan. Test a displayed onscreen boid whose latest cell moves behind the camera, alongside ordinary away/reentry cases.
+
+---
+
+[RENDERING] Partial passes must survive moving membership
+
+Tags: rendering, elapsed budget, dense cells, migration, cursor, starvation
+
+Rejected
+
+Rewinding a partial pass to the earliest dense-removal hole, or treating a processed migrant returning to that same pass as new unvisited work.
+
+Reason
+
+Two members repeatedly crossing out and back can keep a dense cell's unchanged suffix unvisited even while its cursor appears to make progress each frame. Count/time caps expose a failure that whole-cell passes conceal.
+
+Current guardrail
+
+Keep a completed prefix and unvisited suffix, repair only their boundary on removal, and use a row's unique pass stamp to restore returning processed migrants to the prefix. Preserve stamps across dense renderer swaps and invalidate by new pass identity. Test repeated moving membership with a one-row allowance through multiple full refresh cycles, alongside deletion, visibility and ID reuse.
+
+---
+
 [RENDERING] Snapshot migration must preserve render cadence
 
 Tags: rendering, simulation mode, snapshot intake, cell migration, deadline, LOD, CPU
@@ -149,3 +185,21 @@ The dock's proposed F7 shortcut arrived with gameProcessedEvent=true in the live
 Current guardrail
 
 Check live delivery when choosing developer shortcuts. Respect processed input, text focus, and Roblox menus; choose an available key rather than bypassing these exclusions.
+
+---
+
+[RENDERING] Smooth correction residuals on an advancing trajectory
+
+Tags: reconciliation, constant velocity, half-life, trailing lag, prediction
+
+Rejected
+
+Blending only the previous displayed position toward each advancing predicted target.
+
+Reason
+
+That filter trails even perfect constant-velocity input. A 0.75-second half-life can introduce roughly 32 studs of steady lag at 30 studs/second, independently of network prediction accuracy.
+
+Current guardrail
+
+Advance the displayed trajectory with latest velocity before decaying residual positional error, then retain the facing-first movement projection. Test steady motion with sparse snapshots and reduced render cadence, plus corrections, turns and hidden/reentry. Keep source, receipt, render and read clocks distinct when attributing residuals.

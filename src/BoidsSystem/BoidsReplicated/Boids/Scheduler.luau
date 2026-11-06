@@ -86,11 +86,12 @@ function Scheduler.EffectiveInterval<T>(schedulee: Schedulee<T>): number
 end
 
 function Scheduler.SetIntervalMultiplierSoft<T>(schedulee: Schedulee<T>, multiplier: number): ()
-	schedulee.intervalMultiplier = math.max(1, multiplier)
+	assert(multiplier > 0, "Interval multiplier must be positive")
+	schedulee.intervalMultiplier = multiplier
 end
 
 function Scheduler.SetIntervalMultiplier<T>(scheduler: Scheduler<T>, schedulee: Schedulee<T>, multiplier: number, now: number): ()
-	multiplier = math.max(1, multiplier // 1)
+	assert(multiplier > 0, "Interval multiplier must be positive")
 
 	const oldInterval = Scheduler.EffectiveInterval(schedulee)
 	if schedulee.intervalMultiplier == multiplier then

@@ -69,7 +69,7 @@ return function(t: UnitTest.Context): ()
 		prediction.RecordSent(state, packet, 1, 1)
 		prediction.ClearPending(state)
 		for offset, ox, oy, oz, count in codec.ForEachCellHeader(packet) do
-			for id, px, py, pz, vx, vy, vz in codec.ForEachBoid(packet, offset, count) do
+			for id, px, py, pz, vx, vy, vz in codec.ForEachPacketBoid(packet, offset, count) do
 				local v = Vector3.new(vx, vy, vz)
 				local p = Vector3.new(ox + px, oy + py, oz + pz) + v * 60
 				local origin = Vector3.new((p.X // 64) * 64, (p.Y // 64) * 64, (p.Z // 64) * 64)
@@ -139,18 +139,20 @@ return function(t: UnitTest.Context): ()
 
 	t.test("sending a full packet retains partial pending rows and their source-time counts", function()
 		local state = prediction.New()
-		for id = 1, 125 do consider(state, id, Vector3.one * 20, Vector3.xAxis, 1) end
+		for id = 1, 200 do consider(state, id, Vector3.one * 20, Vector3.xAxis, 1) end
 		consider(state, 300, Vector3.one * 20, Vector3.yAxis, 2)
 		local byTime = prediction.BuildSnapshots(state, 100, 0)
 		local packets = codec.ConvertSimulationSnapshotToPackets(byTime[1])
-		local capacity=math.floor((codec.MAX_PACKET_BYTES-codec.CELL_HEADER_BYTES)/codec.BOID_ROW_BYTES)
+		local capacity = 0
+		for _, _, _, _, count in codec.ForEachCellHeader(packets[1]) do capacity += count end
+		t.expect.truthy(capacity < 200)
 		t.expect.equal(prediction.RecordSent(state, packets[1], 1, 1), capacity)
-		t.expect.equal(state.count,126-capacity)
-		t.expect.equal(state.rowsByTime[1],125-capacity)
+		t.expect.equal(state.count,201-capacity)
+		t.expect.equal(state.rowsByTime[1],200-capacity)
 		t.expect.equal(state.rowsByTime[2], 1)
-		t.expect.equal(send(state),126-capacity)
+		t.expect.equal(send(state),201-capacity)
 		t.expect.equal(next(state.rowsByTime), nil)
-		t.expect.equal(state.baselineCount, 126)
+		t.expect.equal(state.baselineCount, 201)
 	end)
 
 	t.test("cooldown uses successful wall-clock send time and releases the newest source at the boundary", function()
@@ -229,20 +231,43 @@ return function(t: UnitTest.Context): ()
 		t.expect.equal(ids,state.count)
 	end)
 
-	t.test("baseline page eviction and retirement repair validity accounting",function()
+	t.test("sparse full-ID baseline pages and retirement repair validity accounting",function()
 		local state=prediction.New()
-		for page=0,79 do
+		for page=0,255 do
 			consider(state,page*256,Vector3.one*20,Vector3.xAxis,page+1)
 			send(state)
 		end
-		t.expect.equal(state.pageCount,64)
-		t.expect.equal(state.baselineCount,64)
-		t.expect.truthy(prediction.GetBufferBytes(state)<=64*256*41+4096*22)
-		for page=0,79 do prediction.Discard(state,page*256) end
+		t.expect.equal(state.pageCount,256)
+		t.expect.equal(state.baselineCount,256)
+		t.expect.truthy(prediction.GetBufferBytes(state)<=256*256*41+4096*22)
+		for page=0,255 do prediction.Discard(state,page*256) end
 		t.expect.equal(state.baselineCount,0)
 		for _,count in state.pageCounts do t.expect.equal(count,0) end
 		t.expect.truthy(consider(state,0,Vector3.one*20,Vector3.xAxis,1))
 		t.expect.equal(send(state),1)
 		t.expect.equal(state.baselineCount,1)
 	end)
+
+	t.test("20k accurate boids retain baselines instead of cycling page eviction",function()
+		local state = prediction.New()
+		for first=0,19999,100 do
+			for id=first,first+99 do consider(state,id,Vector3.one*20,Vector3.zero,1) end
+			t.expect.equal(send(state),100)
+		end
+		t.expect.equal(state.baselineCount,20000)
+		for id=0,19999 do
+			t.expect.falsy(consider(state,id,Vector3.one*20,Vector3.zero,2))
+		end
+		t.expect.equal(state.count,0)
+		t.expect.equal(state.baselineCount,20000)
+	end)
+	t.test("stationary wire state does not create drift corrections", function()
+		local state = prediction.New()
+		consider(state, 7, Vector3.one * 20, Vector3.zero, 1)
+		send(state)
+		for time = 2, 61 do
+			t.expect.falsy(consider(state, 7, Vector3.one * 20, Vector3.zero, time, 1, 1))
+		end
+	end)
+
 end

@@ -26,13 +26,17 @@ rojo serve default.project.json
 
 Open the built place in Studio and connect the matching plugin to localhost **34873**. Start Play. This character-free demonstration needs no game's camera or input scripts. **F6** enters/exits observation; **F8** collapses/expands the dock. Inspector, Camera, and Session / LOD expose the existing tools. Developer authorization and benchmark exclusions still apply.
 
-Select a Scenario using `ActiveBoidsScenario` in [shared metadata](src/BoidsSystem/BoidsReplicated/init.meta.json); the current example is PolarSphereObstacle. `BoidSimulationMode` selects server, client, or both. `BoidClientPresentationMode` selects `simulation` (default, client prediction with server corrections) or `renderer` (server packets feed the renderer directly; requires server simulation). Configure before a fresh Play session, not as hot reload.
+Select a Scenario using `ActiveBoidsScenario` in [shared metadata](src/BoidsSystem/BoidsReplicated/init.meta.json); the current example is PolarSphereObstacle. `BoidSimulationMode` selects server, client, or both. `BoidClientPresentationMode` selects `simulation` (default, client prediction with server corrections) or `renderer` (server packets feed the renderer directly; requires server simulation). Author it on the package before a fresh Play session; hosts must not overwrite the mode after the shared folder has replicated. It is not hot reload.
 
 For examples, read the [Scenario catalog](src/BoidsSystem/Server/Scenarios/Registry/Catalog/init.luau) and [fixtures](src/BoidsSystem/Server/Scenarios/Registry/Catalog/Fixtures.luau). They own the paths, groups, fields, and generated world resources; this README does not duplicate their settings.
 
 The included Scenarios are mainly test and development harnesses. Games can create and manage their own boid groups directly through the [Boids API](docs/api.md); they do not need to use the Scenario registry or scenario startup modules.
 
 Hosts query boids through the copied [server query facade](src/BoidsSystem/Server/BoidQueryIndexServer.luau) or renderer `QueryAttack`, using the [shape, budget and result contracts](src/BoidsSystem/BoidsReplicated/CollisionIndex.luau). Boids remain non-queryable. Network identity is `{id, replicaSerial}` within one session; neither a numeric ID nor a geometric hit grants gameplay authority. Hosts own authorization, health, damage and effect lifetimes. Queries expose incomplete coverage and target/work truncation so hosts can choose explicit approximation policy.
+
+[LODConfig](src/BoidsSystem/BoidsReplicated/LODConfig.luau) gives rendering and displayed-pose collision maintenance a shared cooperative allowance: `maxRenderMsPerFrame` defaults to 4 ms, or `maxMobileRenderMsPerFrame` at 3 ms for touch devices without a keyboard. The row cap remains separate. Busy frames defer visual updates while retaining matching query poses; engine work and GC can exceed the allowance. Actual device capacity still needs measurement.
+
+Correction baselines retain sent state across all u16 IDs, using lazy packed pages capped at 2.56 MiB plus 88 KiB pending rows per recipient, excluding table overhead. This avoids retransmitting accurate boids when a large working set cycles through pages. Run `lune run tests/cli/VerifyPrediction.luau` for codec/state regressions, including sparse full-ID capacity and a 20k accurate population.
 
 ## Use from source with Rojo
 
@@ -49,6 +53,8 @@ The standalone project maps `ServerStorage.UnitTest`. Before Play, generate its 
 For the full suite, pass `nil, 12` to the runner: the actual five-second Actor deadline test exceeds the default five-second per-test timeout. With Lune 0.11.0, run `lune run tests/cli/VerifyDynamicIds.luau` from this package root for isolated allocation, production-coordinator, and client-intake checks without Studio. The script also accepts the host root as its working directory.
 
 `lune run tests/cli/VerifyCollision.luau` checks bounded geometry, a mathematical oracle, history, copied batch reuse and identity reuse without a host game. Kernel timings do not establish native, rendering, mobile or network capacity.
+
+`lune run tests/cli/VerifyRenderBudget.luau` exercises the production renderer and collision math with deterministic proxy/Motor costs: deadline enforcement with measurements disabled, mobile budget selection, partial passes, deletion/reuse and aging fairness. It does not measure Roblox engine or device performance. The standalone RenderBudgetVerification checks real Motor/query agreement from a normal LocalScript with the running viewport visible.
 
 The typed WorkerCore and scheduler fixtures are also checked into source so Studio can analyze their contracts before Play. Run `lune run tests/cli/VerifyFixtureSources.luau` to check that they match production source and the Studio generators. `--emit` prints replacement sources as JSON for a reviewed update; it does not write files. The scheduler fixture extracts only the production dispatch slice, with a typed injected environment. Worker and execution tests still require separate clones to preserve module-local isolation.
 

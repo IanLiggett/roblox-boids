@@ -40,7 +40,7 @@ function ActorCorrections.Consume(state: State, packet: buffer, sourceTime: numb
 	local rows = 0
 	for offset, ox, oy, oz, count in PacketCodec.ForEachCellHeader(packet) do
 		rows += count
-		for id, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, count) do
+		for id, px, py, pz, vx, vy, vz in PacketCodec.ForEachPacketBoid(packet, offset, count) do
 			local target = get(state, id)
 			if sourceTime <= target.cutoff or sourceTime <= target.snapshotTime then continue end
 			if target.isLive then

@@ -97,6 +97,9 @@
                                                                     "RenderVisibilityVerification": {
                                                                         "$path": "tests/Client/VerifyRenderVisibility.luau"
                                                                     },
+                                                                    "RenderBudgetVerification": {
+                                                                        "$path": "tests/Client/VerifyRenderBudget.luau"
+                                                                    },
                                                                     "BoidsScenarioLauncher":  {
                                                                                                   "$path":  "scenario/Start.client.luau"
                                                                                               },

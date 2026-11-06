@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local HttpService = game:GetService("HttpService")
 local TransportMetrics = require(script.Parent.Parent.NetworkResults.TransportMetrics)
+local PacketCodec = require(script.Parent.Parent.NetworkResults.PacketCodec)
 local SharedTypes = require(script.Parent.Parent.SharedTypes)
 local LODConfig = require(script.Parent.Parent.LODConfig)
 local Divergence = require(script.Divergence)
@@ -68,9 +69,13 @@ local function summarizeNetwork(first: TransportMetrics.Snapshot, last: Transpor
 		local previous = first.recipients[userId]
 		local packets = current.sentPackets - (if previous then previous.sentPackets else 0)
 		local payload = current.sentPayloadBytes - (if previous then previous.sentPayloadBytes else 0)
+		local rows = current.sentRows - (if previous then previous.sentRows else 0)
 		local delay = current.queueDelayTotalMs - (if previous then previous.queueDelayTotalMs else 0)
 		recipients[tostring(userId)] = {
 			packetsPerSecond = packets / elapsed, payloadKbps = payload / elapsed / 1000,
+			rowsPerPacket = if packets > 0 then rows / packets else 0,
+			payloadBytesPerPacket = if packets > 0 then payload / packets else 0,
+			packetFillRatio = if packets > 0 then payload / (packets * PacketCodec.MAX_PACKET_BYTES) else 0,
 			operatingLimitUtilization = packets / elapsed / math.max(1,last.configuredPacketsPerClientSecond),
 			batchingTargetPacketsPerSecond = last.configuredPacketsPerClientSecond*0.8,
 			queueDelayAverageMs = if packets > 0 then delay / packets else 0,

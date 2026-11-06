@@ -123,4 +123,28 @@ return function(t: Context): ()
 		local turned=index:Query({shape=shape,sampleTime=1.8,endTime=1.9})
 		t.expect.falsy(turned.hasCoverage)
 	end)
+	t.test("current proxies cross occupied buckets and survive deletion/reuse without stale gathers",function()
+		local index=CollisionIndex.new({cellSize=8})
+		local shared={cellsLeft=100000,testsLeft=100000,deadline=os.clock()+10}
+		local home=Vector3.new(1,1,1)
+		index:Update(1,home,1,7)
+		index:Update(2,home,1,8)
+		for step=1,60 do
+			local position=if step%2==0 then home else Vector3.new(-17,1,1)
+			if step==30 then index:Remove(1) end
+			local serial=if step>=30 then 99 else 7
+			index:Update(1,position,1,serial,step)
+			local hits=index:Query({shape={kind="Sphere",origin=position,radius=0.1}},shared).hits
+			t.expect.equal(#hits,if step%2==0 then 2 else 1)
+			local found=false
+			for _,hit in hits do if hit.boidId==1 then t.expect.equal(hit.replicaSerial,serial);found=true end end
+			t.expect.truthy(found)
+			t.expect.equal(index:GetMetrics().membershipCount,2)
+			if step%2==0 then
+				t.expect.equal(#index:Query({shape={kind="Sphere",origin=Vector3.new(-17,1,1),radius=0.1}},shared).hits,0)
+			end
+		end
+		index:Remove(1);index:Remove(2)
+		t.expect.equal(index:GetMetrics().membershipCount,0)
+	end)
 end

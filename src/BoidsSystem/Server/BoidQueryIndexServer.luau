@@ -176,7 +176,7 @@ function BoidQueryIndexServer.QueryExplosion(origin: Vector3, direction: Vector3
 	local center = if impact then impact.position else origin + direction
 	return center, index:QueryRadius(center, radius)
 end
-function BoidQueryIndexServer.GetEntry(id: number): {position: Vector3, radius: number}?
+function BoidQueryIndexServer.GetEntry(id: number): {position: Vector3, radius: number,replicaSerial: number,sourceTime: number}?
 	return if index then index:GetEntry(id) else nil
 end
 function BoidQueryIndexServer.GetMetrics(): BoidQueryIndex.Metrics

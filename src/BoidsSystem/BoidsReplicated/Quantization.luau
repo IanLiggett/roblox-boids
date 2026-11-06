@@ -102,6 +102,15 @@ local function dequantizeVelocityAxis(encoded:number, minVelocity:number, veloci
 end
 Quantization.dequantizeVelocityAxis = dequantizeVelocityAxis
 
+-- Snapshot velocity has an exact zero; storage's normalized direction codec is separate.
+function Quantization.QuantizeSnapshotVelocityAxis(axis: number): number
+	return math.clamp(math.round(axis), -127, 127) + 127
+end
+
+function Quantization.DequantizeSnapshotVelocityAxis(encoded: number): number
+	return encoded - 127
+end
+
 
 -- Writes and quantizes to U8 a position local to its cell to the buffer
 function Quantization.WriteQuantizedPositionU8(buf:buffer, index:number, x:number, y:number, z:number): ()

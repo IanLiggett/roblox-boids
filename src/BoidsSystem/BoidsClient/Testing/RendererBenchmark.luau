@@ -11,6 +11,7 @@ type Snapshot = {
  renderCap: number, agedCells: number,
  motionUpdates: number, motionUpdatesTotal: number, transparencyWrites: number, transparencyWritesTotal: number,
  hiddenCells: number, transitionCells: number, visibilityCap: number, transparencyWritesMax: number,
+ renderBudgetMs: number, timeLimitedFrames: number, budgetOvershootMsMax: number,
 }
 type Reader = {
  SetMeasurementsEnabled: (boolean) -> (), ResetMeasurements: () -> (),
@@ -69,6 +70,9 @@ function RendererBenchmark.Start(renderer: Reader): ()
   workspace:SetAttribute("RendererBenchmarkHiddenCells", s.hiddenCells)
   workspace:SetAttribute("RendererBenchmarkTransitionCells", s.transitionCells)
   workspace:SetAttribute("RendererBenchmarkVisibilityCap", s.visibilityCap)
+  workspace:SetAttribute("RendererBenchmarkRenderBudgetMs", s.renderBudgetMs)
+  workspace:SetAttribute("RendererBenchmarkTimeLimitedFrames", s.timeLimitedFrames)
+  workspace:SetAttribute("RendererBenchmarkBudgetOvershootMsMax", s.budgetOvershootMsMax)
   workspace:SetAttribute("RendererBenchmarkTransparencyWritesMax", s.transparencyWritesMax)
  end)
 end

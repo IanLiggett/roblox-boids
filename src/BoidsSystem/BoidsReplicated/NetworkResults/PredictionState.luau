@@ -20,11 +20,11 @@ export type State = {
 	count: number,
 	slotById: {[number]: number},
 	rowsByTime: {[number]: number},
-	pageCounts: {[number]: number},pageOrder: {number},pageCursor: number,pendingCursor: number,buildCursor: number,
+	pageCounts: {[number]: number},pendingCursor: number,buildCursor: number,
 }
 
 function PredictionState.New(): State
-	return {pages = {}, pageCount = 0, baselineCount = 0, pending = buffer.create(0), capacity = 0, count = 0, slotById = {}, rowsByTime = {},pageCounts={},pageOrder={},pageCursor=0,pendingCursor=0,buildCursor=0}
+	return {pages = {}, pageCount = 0, baselineCount = 0, pending = buffer.create(0), capacity = 0, count = 0, slotById = {}, rowsByTime = {},pageCounts={},pendingCursor=0,buildCursor=0}
 end
 
 local function baselineOffset(id: number): number
@@ -174,21 +174,15 @@ end
 function PredictionState.RecordSent(state: State, packet: buffer, sourceTime: number, sentAt: number): number
 	local count = 0
 	for offset, ox, oy, oz, boidCount in PacketCodec.ForEachCellHeader(packet) do
-		for id, px, py, pz, vx, vy, vz in PacketCodec.ForEachBoid(packet, offset, boidCount) do
+		for id, px, py, pz, vx, vy, vz in PacketCodec.ForEachPacketBoid(packet, offset, boidCount) do
 			local pageIndex = id // PAGE_ROWS
 			local page = state.pages[pageIndex]
 			if not page then
-				if state.pageCount>=64 then
-					state.pageCursor=state.pageCursor%64+1
-					local retired=state.pageOrder[state.pageCursor]
-					page=state.pages[retired]
-					state.baselineCount-=state.pageCounts[retired]
-					state.pages[retired]=nil; state.pageCounts[retired]=nil
-					buffer.fill(page,0,0); state.pageOrder[state.pageCursor]=pageIndex
-				else
-					page=buffer.create(PAGE_ROWS*BASELINE_BYTES)
-					state.pageCount+=1; state.pageOrder[state.pageCount]=pageIndex
-				end
+				-- Wire IDs are u16: lazy pages cover the full bounded space.
+				-- Eviction below that capacity repeatedly resends accurate boids
+				-- when a recipient's working set cycles through more than 64 pages.
+				page = buffer.create(PAGE_ROWS * BASELINE_BYTES)
+				state.pageCount += 1
 				state.pages[pageIndex] = page
 				state.pageCounts[pageIndex]=0
 			end

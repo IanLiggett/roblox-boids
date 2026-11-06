@@ -53,7 +53,7 @@ end
 
 local function simMultiplierForDistanceSq(dSq: number, config: SimulationLODConfig): number
 	const alpha: number = distanceAlphaSq(dSq, config.nearDistance, config.farDistance)
-	return math.round(config.minIntervalMultiplier + alpha * (config.maxIntervalMultiplier - config.minIntervalMultiplier))
+	return config.minIntervalMultiplier + alpha * (config.maxIntervalMultiplier - config.minIntervalMultiplier)
 end
 
 local function getGroupSimulationConfig(group: Group): SimulationLODConfig

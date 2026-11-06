@@ -155,6 +155,9 @@ function Index.Update(self: State,id: number,position: Vector3,radius: number,se
 		and previousHigh.X==x1 and previousHigh.Y==y1 and previousHigh.Z==z1 then return end
 	local lowCell = Vector3.new(x0,y0,z0)
 	local highCell = if active.history then Vector3.new(x1,y1,z1) else lowCell
+	-- A current-only proxy has one membership. Detach repairs the old bucket's
+	-- dense slots before the same record can join its new cell.
+	local previousMember = if not active.history then active.members[1] else nil
 	detach(self,active)
 	active.lowCell,active.highCell=lowCell,highCell
 	local needed = (x1-x0+1)*(y1-y0+1)*(z1-z0+1)
@@ -163,7 +166,11 @@ function Index.Update(self: State,id: number,position: Vector3,radius: number,se
 		local cellKey = key(x,y,z)
 		local bucket = self.buckets[cellKey]
 		if not bucket then bucket={members={},cursor=0}; self.buckets[cellKey]=bucket end
-		local member: Membership = {id=id,key=cellKey,slot=#bucket.members+1}
+		local member: Membership
+		if previousMember then
+			member=previousMember
+			member.key,member.slot=cellKey,#bucket.members+1
+		else member={id=id,key=cellKey,slot=#bucket.members+1} end
 		bucket.members[member.slot] = member
 		table.insert(active.members,member)
 		self.memberships += 1

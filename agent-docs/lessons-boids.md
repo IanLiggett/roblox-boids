@@ -1,5 +1,23 @@
 # Boids Lessons
 
+[NETWORK] Baseline capacity must cover the supported working set
+
+Tags: replication, prediction, baseline, page eviction, bandwidth, memory, u16
+
+Rejected
+
+Capping recipient baselines below the supported interested population and assuming rotating page eviction only causes occasional extra corrections.
+
+Reason
+
+A cyclic traversal exceeding page capacity can evict every next-needed baseline. The 20k stationary production-code probe selected all 20k rows on every pass with a 64-page cap, despite zero meaningful prediction error. Sparse ID working sets can fare worse than the raw population suggests.
+
+Current guardrail
+
+Lazily retain baselines across all 256 u16 pages under the owner-approved memory bound. Keep pending rows separately bounded and advance sent state only on FireClient. Test a cyclic 20k accurate workload and sparse IDs spanning the complete ID space; inspect baseline retention and selection rate together when changing memory limits.
+
+---
+
 [NETWORK] Cooldowns can fragment source-time batches
 
 Tags: network LOD, cooldown, pending rows, source time, batching, bandwidth
